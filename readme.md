@@ -5,8 +5,8 @@
 Create conda env:
 
 ```
-conda create --name cast python=3.11
-conda activate cast
+conda create --name autoseg python=3.11
+conda activate autoseg
 ```
 
 Exports:
@@ -21,8 +21,8 @@ Clone Grounded-Segment-Anything repo:
 
 ```
 git clone https://github.com/IDEA-Research/Grounded-Segment-Anything
-mv Grounded-Segment-Anything/segment_anything segment_anything
 mv Grounded-Segment-Anything/GroundingDINO GroundingDINO
+mv Grounded-Segment-Anything/segment_anything segment_anything
 ```
 
 Install SAM:
@@ -35,7 +35,6 @@ Install PyTorch
 
 ```
 pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-pip install --no-build-isolation -e GroundingDINO
 ```
 
 Install GroundingDINO
@@ -58,11 +57,12 @@ pip install -r ./recognize-anything/requirements.txt
 pip install -e ./recognize-anything/
 ```
 
-Correct opencv and numpy:
+Correct opencv, numpy, and transformers:
 
 ```
 pip install opencv-python==4.8.1.78
 pip install numpy==1.26.4
+pip install transformers==4.35.2  
 ```
 
 Download model weights:
