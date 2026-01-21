@@ -32,7 +32,9 @@ from ram import inference_ram
 
 # ============== CONFIG ==============
 IMAGE_PATH = "image.jpg"
-OUTPUT_PATH = "output.jpg"
+OUTPUT_DIR = "output"
+OUTPUT_PATH = os.path.join(OUTPUT_DIR, "output.jpg")
+MASKS_DIR = os.path.join(OUTPUT_DIR, "masks")
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Model checkpoints - UPDATE THESE PATHS
@@ -178,8 +180,29 @@ if __name__ == "__main__":
         multimask_output=False,
     )
 
-    # 5. Visualize and save
-    print("Saving output...")
+    # 5. Save masks as RGBA PNGs
+    print("Saving masks...")
+    os.makedirs(MASKS_DIR, exist_ok=True)
+
+    for idx, mask in enumerate(masks):
+        # Get mask as boolean array (H, W)
+        mask_np = mask.cpu().numpy().squeeze()  # Remove batch and channel dims if present
+
+        # Create RGBA image
+        rgba = np.zeros((mask_np.shape[0], mask_np.shape[1], 4), dtype=np.uint8)
+        rgba[..., :3] = image_cv  # RGB channels from original image
+        rgba[..., 3] = (mask_np * 255).astype(np.uint8)  # Alpha channel = mask
+
+        # Save as PNG
+        mask_path = os.path.join(MASKS_DIR, f"{idx}.png")
+        Image.fromarray(rgba, mode='RGBA').save(mask_path)
+
+    print(f"Saved {len(masks)} masks to {MASKS_DIR}")
+
+    # 6. Visualize and save
+    print("Saving visualization...")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+
     plt.figure(figsize=(10, 10))
     plt.imshow(image_cv)
 
@@ -190,7 +213,7 @@ if __name__ == "__main__":
 
     plt.axis('off')
     plt.savefig(OUTPUT_PATH, bbox_inches="tight", dpi=300, pad_inches=0.0)
-    print(f"Saved to {OUTPUT_PATH}")
+    print(f"Saved visualization to {OUTPUT_PATH}")
 
     # Print detected objects
     print("\nDetected objects:")
