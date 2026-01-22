@@ -1,6 +1,6 @@
 ## CAST Using SAM3D + Graph-based SDF Physics Correction
 
-# Setup guide
+# AutoSegment Setup guide
 
 Create conda env:
 
@@ -73,4 +73,54 @@ wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alp
 
 wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/ram_swin_large_14m.pth
 wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin_14m.pth
+```
+
+# SAM3D Setup
+
+Create sam3d-objects environment
+
+```
+mamba env create -f environments/default.yml
+mamba activate sam3d-objects
+```
+
+For pytorch/cuda dependencies
+
+```
+export PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://download.pytorch.org/whl/cu121"
+```
+
+Install sam3d-objects and core dependencies
+
+```
+pip install -e '.[dev]'
+pip install -e '.[p3d]' # pytorch3d dependency on pytorch is broken, this 2-step approach solves it
+```
+
+For inference
+
+```
+export PIP_FIND_LINKS="https://nvidia-kaolin.s3.us-east-2.amazonaws.com/torch-2.5.1_cu121.html"
+pip install -e '.[inference]'
+```
+
+Patch things that aren't yet in official pip packages
+
+```
+./patching/hydra # https://github.com/facebookresearch/hydra/pull/2863
+```
+
+Install checkpoints
+
+```
+pip install 'huggingface-hub[cli]<1.0'
+
+TAG=hf
+hf download \
+  --repo-type model \
+  --local-dir checkpoints/${TAG}-download \
+  --max-workers 1 \
+  facebook/sam-3d-objects
+mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
+rm -rf checkpoints/${TAG}-download
 ```
