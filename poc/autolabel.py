@@ -4,6 +4,7 @@ Automatic image labeling using RAM + Grounding DINO + SAM
 2. Grounding DINO detects bounding boxes for those tags
 3. SAM segments each detected box
 """
+import argparse
 import os
 import numpy as np
 import torch
@@ -30,6 +31,9 @@ from segment_anything import build_sam, SamPredictor
 from ram.models import ram
 from ram import inference_ram
 
+# Qwen2-VL (via llama.cpp CLI)
+import subprocess
+
 # ============== CONFIG ==============
 IMAGE_PATH = "image.jpg"
 OUTPUT_DIR = "output"
@@ -44,10 +48,55 @@ SAM_CHECKPOINT = "./sam_vit_h_4b8939.pth"
 RAM_CHECKPOINT = "./ram_swin_large_14m.pth"
 
 # Thresholds
-BOX_THRESHOLD = 0.25
+BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.2
-IOU_THRESHOLD = 0.4
+IOU_THRESHOLD = 0.3
+
+# Qwen2-VL (llama.cpp)
+LLAMA_CPP_BIN = "./llama.cpp/build/bin/llama-mtmd-cli"
+QWEN2_VL_MODEL_PATH = "./Qwen2-VL-7B-Instruct-Q4_K_M.gguf"
+QWEN2_VL_MMPROJ_PATH = "./mmproj-Qwen2-VL-7B-Instruct-f16.gguf"
 # ====================================
+
+
+def get_qwen2vl_tags(image_path):
+    """
+    Use Qwen2-VL-7B via llama.cpp CLI to identify all distinct objects in an image.
+    Returns a comma-separated string of object tags.
+    """
+    prompt = """List all distinct object types visible in this image.
+Rules:
+- Output ONLY a comma-separated list of object names, nothing else
+- List each object type only ONCE, even if there are multiple instances (e.g., 3 chairs = just "chair")
+- NEVER repeat any object name - each word should appear only once in your output
+- Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
+- Be specific but not overly detailed (e.g., "chair" not "wooden dining chair with cushion")
+- Stop after listing each unique object once
+- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, carpet, wooden floor, tile)
+
+Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
+
+    import sys
+
+    result = subprocess.run(
+        [
+            LLAMA_CPP_BIN,
+            "-m", QWEN2_VL_MODEL_PATH,
+            "--mmproj", QWEN2_VL_MMPROJ_PATH,
+            "--image", image_path,
+            "-p", prompt,
+            "-n", "128",  # Reduced for faster inference
+            "-ngl", "99",  # Offload all layers to GPU
+        ],
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,  # Show progress on terminal
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(f"llama.cpp failed with return code {result.returncode}")
+
+    return result.stdout.strip()
 
 
 def load_image(image_path):
@@ -98,6 +147,20 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold, d
     scores = []
     for logit, box in zip(logits_filt, boxes_filt):
         pred_phrase = get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer)
+        # Clean up repeated words (e.g., "beach towel beach towel" -> "beach towel")
+        words = pred_phrase.split()
+        if len(words) > 1:
+            # Find the shortest repeating pattern
+            for pattern_len in range(1, len(words) // 2 + 1):
+                pattern = words[:pattern_len]
+                is_repeat = True
+                for i in range(pattern_len, len(words)):
+                    if words[i] != pattern[i % pattern_len]:
+                        is_repeat = False
+                        break
+                if is_repeat:
+                    pred_phrase = ' '.join(pattern)
+                    break
         pred_phrases.append(pred_phrase + f"({logit.max().item():.2f})")
         scores.append(logit.max().item())
 
@@ -122,33 +185,87 @@ def show_box(box, ax, label):
             bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
 
 
-if __name__ == "__main__":
-    print(f"Using device: {DEVICE}")
-
-    # 1. Load image
-    print("Loading image...")
-    image_pil, image = load_image(IMAGE_PATH)
-    W, H = image_pil.size
-
-    # 2. RAM: Generate tags
-    print("Running RAM to generate tags...")
+def get_ram_tags(image_pil, device):
+    """
+    Use RAM to generate tags for the image.
+    Returns a comma-separated string of object tags.
+    """
     normalize = TS.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
     ram_transform = TS.Compose([TS.Resize((384, 384)), TS.ToTensor(), normalize])
 
     ram_model = ram(pretrained=RAM_CHECKPOINT, image_size=384, vit='swin_l')
-    ram_model.eval().to(DEVICE)
+    ram_model.eval().to(device)
 
-    ram_image = ram_transform(image_pil.resize((384, 384))).unsqueeze(0).to(DEVICE)
+    ram_image = ram_transform(image_pil.resize((384, 384))).unsqueeze(0).to(device)
     res = inference_ram(ram_image, ram_model)
     tags = res[0].replace(' |', ',')
+    return tags
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Automatic image labeling using Grounding DINO + SAM")
+    parser.add_argument("--tagger", type=str, choices=["ram", "qwen"], default="ram",
+                        help="Tag generation model: 'ram' (default) or 'qwen' (Qwen2-VL-7B)")
+    parser.add_argument("--image", type=str, default=IMAGE_PATH,
+                        help=f"Path to input image (default: {IMAGE_PATH})")
+    args = parser.parse_args()
+
+    print(f"Using device: {DEVICE}")
+
+    # 1. Load image
+    print("Loading image...")
+    image_pil, image = load_image(args.image)
+    W, H = image_pil.size
+
+    # 2. Generate tags using selected model
+    if args.tagger == "qwen":
+        print("Running Qwen2-VL to generate tags...")
+        tags = get_qwen2vl_tags(os.path.abspath(args.image))
+    else:
+        print("Running RAM to generate tags...")
+        tags = get_ram_tags(image_pil, DEVICE)
+        
     print(f"Tags: {tags}")
 
-    # 3. Grounding DINO: Detect boxes for tags
+    # Convert comma-separated tags to period-separated format for Grounding DINO
+    # Grounding DINO expects tags like "cat . dog . chair" not "cat, dog, chair"
+    # Also deduplicate tags while preserving order
+    tag_list = [t.strip() for t in tags.replace('.', ',').split(',') if t.strip()]
+    seen = set()
+    unique_tags = []
+    for tag in tag_list:
+        if tag.lower() not in seen:
+            seen.add(tag.lower())
+            unique_tags.append(tag)
+    grounding_tags = ' . '.join(unique_tags)
+    print(f"Grounding DINO input: {grounding_tags}")
+
+    # 3. Grounding DINO: Detect boxes for each tag separately to avoid cross-tag confusion
     print("Running Grounding DINO...")
     grounding_model = load_grounding_dino(GROUNDING_DINO_CONFIG, GROUNDING_DINO_CHECKPOINT, DEVICE)
-    boxes_filt, scores, pred_phrases = get_grounding_output(
-        grounding_model, image, tags, BOX_THRESHOLD, TEXT_THRESHOLD, DEVICE
-    )
+
+    all_boxes = []
+    all_scores = []
+    all_phrases = []
+
+    for tag in unique_tags:
+        boxes, scores_t, phrases = get_grounding_output(
+            grounding_model, image, tag, BOX_THRESHOLD, TEXT_THRESHOLD, DEVICE
+        )
+        for i in range(len(boxes)):
+            all_boxes.append(boxes[i])
+            all_scores.append(scores_t[i].item())
+            # Use the original tag name instead of parsed phrase
+            all_phrases.append(f"{tag}({scores_t[i].item():.2f})")
+
+    if all_boxes:
+        boxes_filt = torch.stack(all_boxes)
+        scores = torch.tensor(all_scores)
+        pred_phrases = all_phrases
+    else:
+        boxes_filt = torch.zeros((0, 4))
+        scores = torch.tensor([])
+        pred_phrases = []
 
     # Convert boxes from [cx, cy, w, h] to [x1, y1, x2, y2]
     for i in range(boxes_filt.size(0)):
@@ -156,10 +273,15 @@ if __name__ == "__main__":
         boxes_filt[i][:2] -= boxes_filt[i][2:] / 2
         boxes_filt[i][2:] += boxes_filt[i][:2]
 
-    # Apply NMS
+    # Apply class-aware NMS (batched_nms) - only suppresses boxes of the same class
     boxes_filt = boxes_filt.cpu()
     print(f"Before NMS: {boxes_filt.shape[0]} boxes")
-    nms_idx = torchvision.ops.nms(boxes_filt, scores, IOU_THRESHOLD).numpy().tolist()
+
+    # Create class IDs from tag names (boxes with same tag get same class ID)
+    tag_to_id = {tag: i for i, tag in enumerate(unique_tags)}
+    class_ids = torch.tensor([tag_to_id[phrase.rsplit('(', 1)[0]] for phrase in pred_phrases])
+
+    nms_idx = torchvision.ops.batched_nms(boxes_filt, scores, class_ids, IOU_THRESHOLD).numpy().tolist()
     boxes_filt = boxes_filt[nms_idx]
     pred_phrases = [pred_phrases[idx] for idx in nms_idx]
     print(f"After NMS: {boxes_filt.shape[0]} boxes")
@@ -168,7 +290,7 @@ if __name__ == "__main__":
     print("Running SAM...")
     sam_predictor = SamPredictor(build_sam(checkpoint=SAM_CHECKPOINT).to(DEVICE))
 
-    image_cv = cv2.imread(IMAGE_PATH)
+    image_cv = cv2.imread(args.image)
     image_cv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
     sam_predictor.set_image(image_cv)
 
@@ -184,9 +306,17 @@ if __name__ == "__main__":
     print("Saving masks...")
     os.makedirs(MASKS_DIR, exist_ok=True)
 
-    for idx, mask in enumerate(masks):
+    MIN_MASK_AREA = 0  # Minimum pixels for a valid mask
+    saved_count = 0
+    for idx, (mask, phrase) in enumerate(zip(masks, pred_phrases)):
         # Get mask as boolean array (H, W)
         mask_np = mask.cpu().numpy().squeeze()  # Remove batch and channel dims if present
+
+        # Skip empty or tiny masks
+        mask_area = mask_np.sum()
+        if mask_area < MIN_MASK_AREA:
+            print(f"  Skipping mask {idx} ({phrase}): too small ({mask_area} pixels)")
+            continue
 
         # Create RGBA image
         rgba = np.zeros((mask_np.shape[0], mask_np.shape[1], 4), dtype=np.uint8)
@@ -194,10 +324,11 @@ if __name__ == "__main__":
         rgba[..., 3] = (mask_np * 255).astype(np.uint8)  # Alpha channel = mask
 
         # Save as PNG
-        mask_path = os.path.join(MASKS_DIR, f"{idx}.png")
+        mask_path = os.path.join(MASKS_DIR, f"{saved_count}.png")
         Image.fromarray(rgba, mode='RGBA').save(mask_path)
+        saved_count += 1
 
-    print(f"Saved {len(masks)} masks to {MASKS_DIR}")
+    print(f"Saved {saved_count} masks to {MASKS_DIR} (skipped {len(masks) - saved_count} empty/tiny masks)")
 
     # 6. Visualize and save
     print("Saving visualization...")

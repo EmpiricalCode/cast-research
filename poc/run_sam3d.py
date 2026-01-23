@@ -2,6 +2,7 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 import sys
 import os
+import argparse
 
 # Get the directory containing this script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -17,10 +18,19 @@ from inference import Inference, load_image, load_single_mask, make_scene
 import json
 
 def main():
+    parser = argparse.ArgumentParser(description="Run SAM 3D on masked objects")
+    parser.add_argument("--image", type=str, default=os.path.join(project_root, "image.jpg"),
+                        help="Path to input image")
+    parser.add_argument("--masks-dir", type=str, default=os.path.join(project_root, "output/masks"),
+                        help="Directory containing mask PNGs")
+    parser.add_argument("--output-dir", type=str, default=os.path.join(project_root, "output/sam3d_results"),
+                        help="Output directory for 3D results")
+    args = parser.parse_args()
+
     # Setup paths
-    image_path = os.path.join(project_root, "image.jpg")
-    masks_dir = os.path.join(project_root, "output/masks")
-    output_dir = os.path.join(project_root, "output/sam3d_results")
+    image_path = args.image
+    masks_dir = args.masks_dir
+    output_dir = args.output_dir
 
     # Create output directory
     os.makedirs(output_dir, exist_ok=True)
@@ -52,7 +62,13 @@ def main():
 
         # Run inference
         print(f"  Running SAM 3D inference...")
-        output = inference(image, mask, seed=42)
+        try:
+            output = inference(image, mask, seed=42)
+        except RuntimeError as e:
+            if "numel() == 0" in str(e) or "Expected reduction dim" in str(e):
+                print(f"  Skipping mask {mask_index}: no valid pointmap data in masked region")
+                continue
+            raise
         outputs.append(output)
 
         # Save individual object
