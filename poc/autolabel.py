@@ -231,10 +231,26 @@ if __name__ == "__main__":
         
     print(f"Tags: {tags}")
 
+    # Filter out forbidden words
+    FORBIDDEN_WORDS = {'sky'}
+
     # Convert comma-separated tags to period-separated format for Grounding DINO
     # Grounding DINO expects tags like "cat . dog . chair" not "cat, dog, chair"
     # Also deduplicate tags while preserving order
     tag_list = [t.strip() for t in tags.replace('.', ',').split(',') if t.strip()]
+
+    # Filter out tags containing forbidden words
+    filtered_tags = []
+    for tag in tag_list:
+        words = tag.lower().split()
+        if not any(word in FORBIDDEN_WORDS for word in words):
+            filtered_tags.append(tag)
+        else:
+            print(f"  Filtering out: {tag}")
+
+    tag_list = filtered_tags
+
+    # Deduplicate
     seen = set()
     unique_tags = []
     for tag in tag_list:
