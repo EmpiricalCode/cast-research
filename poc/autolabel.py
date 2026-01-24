@@ -65,14 +65,18 @@ def get_qwen2vl_tags(image_path):
     Returns a comma-separated string of object tags.
     """
     prompt = """List all distinct object types visible in this image.
-Rules:
+Rules:v
 - Output ONLY a comma-separated list of object names, nothing else
 - List each object type only ONCE, even if there are multiple instances (e.g., 3 chairs = just "chair")
 - NEVER repeat any object name - each word should appear only once in your output
 - Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
 - Be specific but not overly detailed (e.g., "chair" not "wooden dining chair with cushion")
 - Stop after listing each unique object once
-- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, carpet, wooden floor, tile). Do NOT inlude the sky.
+- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, wooden floor, tile).
+- Do NOT include background elements like "wall", "ceiling", or "window" unless they are prominent objects in the image.
+- YOU MUST INCLUDE EVERY OBJECT WITHIN THE IMAGE!!! TRY TO INCLUDE COLOR AND MATERIAL OF OBJECTS IF POSSIBLE.
+- DO NOT INCLUDE THE SKY!!!
+- ALWAYS OPT FOR GENERIC DESCIPTORS WITH MATERIALS (e.g., "wooden table" instead of "dining table", "metal chair" instead of "office chair")
 
 Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
 
