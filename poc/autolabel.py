@@ -54,8 +54,8 @@ IOU_THRESHOLD = 0.3
 
 # Qwen2-VL (llama.cpp)
 LLAMA_CPP_BIN = "./llama.cpp/build/bin/llama-mtmd-cli"
-QWEN2_VL_MODEL_PATH = "./Qwen2-VL-7B-Instruct-Q4_K_M.gguf"
-QWEN2_VL_MMPROJ_PATH = "./mmproj-Qwen2-VL-7B-Instruct-f16.gguf"
+QWEN2_VL_MODEL_PATH = "./Qwen_Qwen2.5-VL-7B-Instruct-Q5_K_M.gguf"
+QWEN2_VL_MMPROJ_PATH = "./mmproj-Qwen_Qwen2.5-VL-7B-Instruct-f16.gguf"
 # ====================================
 
 
@@ -72,7 +72,7 @@ Rules:
 - Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
 - Be specific but not overly detailed (e.g., "chair" not "wooden dining chair with cushion")
 - Stop after listing each unique object once
-- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, carpet, wooden floor, tile)
+- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, carpet, wooden floor, tile). Do NOT inlude the sky.
 
 Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
 
@@ -301,6 +301,61 @@ if __name__ == "__main__":
         boxes=transformed_boxes,
         multimask_output=False,
     )
+
+    # Deduplicate masks based on containment
+    print("Deduplicating masks based on containment...")
+    CONTAINMENT_THRESHOLD = 0.9  # If 90% of a mask is inside another, it's likely a duplicate
+
+    masks_to_skip = set()  # Track which masks to skip
+
+    for i in range(len(masks)):
+        if i in masks_to_skip:
+            continue
+
+        mask_i = masks[i].cpu().numpy().squeeze().astype(bool)
+        size_i = mask_i.sum()
+
+        if size_i == 0:
+            masks_to_skip.add(i)
+            continue
+
+        for j in range(len(masks)):
+            if i == j or j in masks_to_skip:
+                continue
+
+            mask_j = masks[j].cpu().numpy().squeeze().astype(bool)
+            size_j = mask_j.sum()
+
+            if size_j == 0:
+                continue
+
+            # Calculate what % of mask_i is contained in mask_j
+            intersection = (mask_i & mask_j).sum()
+            containment = intersection / size_i
+
+            # If mask_i is mostly contained in mask_j, remove the smaller one
+            if containment > CONTAINMENT_THRESHOLD:
+                if size_i < size_j:
+                    # i is smaller and contained in j -> remove i
+                    print(f"  Removing {pred_phrases[i]} ({containment:.1%} contained in {pred_phrases[j]}, smaller)")
+                    masks_to_skip.add(i)
+                    break
+                else:
+                    # i is larger but j is contained in i -> remove j
+                    print(f"  Removing {pred_phrases[j]} ({containment:.1%} contained in {pred_phrases[i]}, smaller)")
+                    masks_to_skip.add(j)
+
+    # Build the kept masks list
+    masks_to_keep = []
+    phrases_to_keep = []
+    for i in range(len(masks)):
+        if i not in masks_to_skip:
+            masks_to_keep.append(masks[i])
+            phrases_to_keep.append(pred_phrases[i])
+
+    masks = torch.stack(masks_to_keep) if masks_to_keep else torch.zeros((0, 1, masks.shape[2], masks.shape[3]))
+    pred_phrases = phrases_to_keep
+    print(f"After deduplication: {len(masks)} masks retained")
 
     # 5. Save masks as RGBA PNGs
     print("Saving masks...")
