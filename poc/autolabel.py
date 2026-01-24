@@ -365,15 +365,18 @@ if __name__ == "__main__":
                     print(f"  Removing {pred_phrases[j]} ({containment:.1%} contained in {pred_phrases[i]}, smaller)")
                     masks_to_skip.add(j)
 
-    # Build the kept masks list
+    # Build the kept masks/boxes/phrases lists
     masks_to_keep = []
+    boxes_to_keep = []
     phrases_to_keep = []
     for i in range(len(masks)):
         if i not in masks_to_skip:
             masks_to_keep.append(masks[i])
+            boxes_to_keep.append(boxes_filt[i])
             phrases_to_keep.append(pred_phrases[i])
 
     masks = torch.stack(masks_to_keep) if masks_to_keep else torch.zeros((0, 1, masks.shape[2], masks.shape[3]))
+    boxes_filt = torch.stack(boxes_to_keep) if boxes_to_keep else torch.zeros((0, 4))
     pred_phrases = phrases_to_keep
     print(f"After deduplication: {len(masks)} masks retained")
 
