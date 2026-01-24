@@ -1,5 +1,23 @@
 ## CAST Using SAM3D + Graph-based SDF Physics Correction
 
+## Examples
+
+### House Scene
+
+Original Image:
+![House Input](house.jpg)
+
+3D Scene:
+![House 3D Output](house_qwen_filtered.png)
+
+### Lamp Scene
+
+Original Image:
+![Lamp Input](lamp.jpg)
+
+3D Scene:
+![Lamp 3D Output](lamp_qwen_filtered.jpg)
+
 # AutoSegment Setup guide
 
 Create conda env:
