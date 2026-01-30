@@ -60,10 +60,25 @@ def main():
         # Load mask
         mask = load_single_mask(masks_dir, index=mask_index, extension=".png")
 
-        # Run inference
+        # Run inference with mesh generation enabled
         print(f"  Running SAM 3D inference...")
         try:
-            output = inference(image, mask, seed=42)
+            # Merge mask to RGBA
+            rgba_image = inference.merge_mask_to_rgba(image, mask)
+            # Call pipeline directly to enable mesh generation
+            # Note: with_texture_baking=False to avoid requiring diff_gaussian_rasterization
+            output = inference._pipeline.run(
+                rgba_image,
+                None,
+                seed=42,
+                stage1_only=False,
+                with_mesh_postprocess=True,
+                with_texture_baking=False,  # Disabled: requires diff_gaussian_rasterization
+                with_layout_postprocess=False,
+                use_vertex_color=True,  # Use vertex colors instead of texture
+                stage1_inference_steps=None,
+                pointmap=None,
+            )
         except RuntimeError as e:
             if "numel() == 0" in str(e) or "Expected reduction dim" in str(e):
                 print(f"  Skipping mask {mask_index}: no valid pointmap data in masked region")
@@ -71,10 +86,13 @@ def main():
             raise
         outputs.append(output)
 
-        # Save individual object
-        output_path = os.path.join(output_dir, f"object_{mask_index}.ply")
-        output["gs"].save_ply(output_path)
-        print(f"  Saved 3D reconstruction to {output_path}")
+        # Save individual object as GLB mesh
+        output_path = os.path.join(output_dir, f"object_{mask_index}.glb")
+        if output.get("glb") is not None:
+            output["glb"].export(output_path)
+            print(f"  Saved 3D mesh to {output_path}")
+        else:
+            print(f"  Warning: No mesh generated for mask {mask_index}")
 
         # Save positional metadata
         metadata[f"object_{mask_index}"] = {
@@ -90,11 +108,17 @@ def main():
     print(f"\n✓ Saved positional metadata to {metadata_path}")
 
     # Create combined scene with all objects positioned correctly
-    print(f"\nCreating combined scene...")
-    scene_gs = make_scene(*outputs)
-    scene_path = os.path.join(output_dir, "scene_posed.ply")
-    scene_gs.save_ply(scene_path)
-    print(f"✓ Saved positioned scene to {scene_path}")
+    if outputs:
+        print(f"\nCreating combined scene...")
+        scene_gs = make_scene(*outputs)
+
+        # Save as PLY for compatibility
+        scene_ply_path = os.path.join(output_dir, "scene_posed.ply")
+        scene_gs.save_ply(scene_ply_path)
+        print(f"✓ Saved positioned scene (PLY) to {scene_ply_path}")
+
+        # Note: Combined scene as GLB would require mesh extraction from the combined Gaussian splat
+        # Individual objects are already saved as GLB files above
 
     print(f"\n✓ All done! Results saved to {output_dir}")
 

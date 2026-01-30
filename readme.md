@@ -161,3 +161,10 @@ hf download \
 mv checkpoints/${TAG}-download/checkpoints checkpoints/${TAG}
 rm -rf checkpoints/${TAG}-download
 ```
+
+Install nvdiffrast (necessary for saving as .glb)
+
+```
+pip install setuptools wheel ninja
+pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
+```
