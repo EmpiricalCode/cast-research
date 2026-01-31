@@ -168,3 +168,22 @@ Install nvdiffrast (necessary for saving as .glb)
 pip install setuptools wheel ninja
 pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
 ```
+
+# SDF Setup
+
+Install
+
+```
+pip install numpy                                                         
+pip install trimesh                                                       
+pip install mesh-to-sdf                                                   
+pip install matplotlib                                                    
+pip install pyrender                                                      
+pip install pyglet   
+```
+
+Inference
+
+```
+PYOPENGL_PLATFORM=egl python3 poc/compute_sdf.py --input                 output/sam3d_results/object_0.glb --resolution 64   
+```
