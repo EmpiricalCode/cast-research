@@ -180,6 +180,9 @@ pip install mesh-to-sdf
 pip install matplotlib                                                    
 pip install pyrender                                                      
 pip install pyglet   
+
+pip install fvcore iopath
+pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu118_pyt200/download.html
 ```
 
 Inference
