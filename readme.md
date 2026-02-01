@@ -171,6 +171,11 @@ pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
 
 # SDF Setup
 
+```
+conda create -n sdf
+conda activate sdf
+```
+
 Install
 
 ```
