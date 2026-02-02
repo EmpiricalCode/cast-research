@@ -149,7 +149,7 @@ def visualize_mesh(mesh, output_path, verbose=True):
     plt.close()
 
 
-def world_to_local_transform(world_points, target_rotation, target_translation, target_scale):
+def world_to_local_transform(world_points, target_rotation, target_translation, target_scale, normalization_scale):
     """
     Transform world points to target object's local normalized space [-1, 1]³.
 
@@ -157,10 +157,11 @@ def world_to_local_transform(world_points, target_rotation, target_translation, 
         world_points: [N, 3] torch tensor
         target_rotation: [4] quaternion [w, x, y, z]
         target_translation: [3] translation
-        target_scale: [3] scale (uniform)
+        target_scale: [3] scale (uniform) - world transform scale
+        normalization_scale: float - scale factor from mesh normalization
 
     Returns:
-        [N, 3] points in target's local space
+        [N, 3] points in target's normalized SDF space
     """
     # Use PyTorch3D's Transform3d to get exact inverse of forward transform
     rot_matrix = quaternion_to_matrix(target_rotation.unsqueeze(0)).squeeze()
@@ -169,11 +170,15 @@ def world_to_local_transform(world_points, target_rotation, target_translation, 
     tfm_forward = Transform3d()
     tfm_forward = tfm_forward.scale(target_scale.unsqueeze(0)).rotate(rot_matrix.unsqueeze(0)).translate(target_translation.unsqueeze(0))
 
-    # Get inverse transform
+    # Get inverse transform (world -> target's local GLB space)
     tfm_inverse = tfm_forward.inverse()
+    points_target_local = tfm_inverse.transform_points(world_points)
 
-    # Apply inverse transform
-    return tfm_inverse.transform_points(world_points)
+    # Apply normalization to get into SDF grid space
+    # The SDF was computed on a mesh normalized by dividing by normalization_scale
+    points_normalized = points_target_local / normalization_scale
+
+    return points_normalized
 
 
 def query_sdf_trilinear(sdf_grid, local_points):
@@ -403,9 +408,9 @@ def visualize_sdf(sdf_grid, resolution, target_obj_name, sam3d_dir, normalizatio
         points_local_torch = torch.tensor(points_local, dtype=torch.float32)
         points_world = tfm.transform_points(points_local_torch)
 
-        # Transform from world to target's local space
+        # Transform from world to target's normalized SDF space
         points_target_local = world_to_local_transform(
-            points_world, target_rotation, target_translation, target_scale
+            points_world, target_rotation, target_translation, target_scale, normalization_scale
         )
 
         # Filter points within [-1, 1]³ bounds
