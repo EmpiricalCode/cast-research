@@ -58,7 +58,7 @@ def transform_points(points, rotation, translation, scale):
     # Convert back to numpy
     return world_points_torch.cpu().numpy()
 
-def load_object_points(glb_path, num_samples=5000):
+def load_object_points(glb_path, num_samples=20000):
     """
     Load mesh from GLB and sample points from it
 
@@ -110,7 +110,7 @@ def main():
         print(f"Loading {obj_name} from {glb_path}")
 
         # Load points in local space
-        local_points = load_object_points(glb_path, num_samples=5000)
+        local_points = load_object_points(glb_path)
 
         # Transform to world space
         rotation = transform['rotation']
@@ -138,49 +138,28 @@ def main():
 
     print(f"\nTotal points in scene: {len(all_points)}")
 
-    # Plot
-    fig = plt.figure(figsize=(12, 10))
-    ax = fig.add_subplot(111, projection='3d')
+    # Export to PLY
+    output_path = os.path.join(project_root, "output/scene_visualization.ply")
 
-    # Scatter plot
-    ax.scatter(
-        all_points[:, 0],
-        all_points[:, 1],
-        all_points[:, 2],
-        c=all_colors,
-        s=1,
-        alpha=0.6
-    )
+    # Convert colors from [0, 1] to [0, 255]
+    colors_uint8 = (all_colors * 255).astype(np.uint8)
 
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    ax.set_title('3D Scene - Transformed Objects')
+    with open(output_path, 'w') as f:
+        f.write("ply\n")
+        f.write("format ascii 1.0\n")
+        f.write(f"element vertex {len(all_points)}\n")
+        f.write("property float x\n")
+        f.write("property float y\n")
+        f.write("property float z\n")
+        f.write("property uchar red\n")
+        f.write("property uchar green\n")
+        f.write("property uchar blue\n")
+        f.write("end_header\n")
 
-    # Set view angle (elevation, azimuth)
-    ax.view_init(elev=20, azim=45)
+        for pt, col in zip(all_points, colors_uint8):
+            f.write(f"{pt[0]} {pt[1]} {pt[2]} {col[0]} {col[1]} {col[2]}\n")
 
-    # Equal aspect ratio
-    max_range = np.array([
-        all_points[:, 0].max() - all_points[:, 0].min(),
-        all_points[:, 1].max() - all_points[:, 1].min(),
-        all_points[:, 2].max() - all_points[:, 2].min()
-    ]).max() / 2.0
-
-    mid_x = (all_points[:, 0].max() + all_points[:, 0].min()) * 0.5
-    mid_y = (all_points[:, 1].max() + all_points[:, 1].min()) * 0.5
-    mid_z = (all_points[:, 2].max() + all_points[:, 2].min()) * 0.5
-
-    ax.set_xlim(mid_x - max_range, mid_x + max_range)
-    ax.set_ylim(mid_y - max_range, mid_y + max_range)
-    ax.set_zlim(mid_z - max_range, mid_z + max_range)
-
-    # Save
-    output_path = os.path.join(project_root, "output/scene_visualization.png")
-    plt.savefig(output_path, dpi=150, bbox_inches='tight')
-    print(f"\nSaved visualization to {output_path}")
-
-    plt.show()
+    print(f"\nSaved PLY to {output_path} ({len(all_points):,} points)")
 
 if __name__ == "__main__":
     main()
