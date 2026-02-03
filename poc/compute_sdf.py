@@ -39,11 +39,10 @@ def normalize_mesh(mesh, target_scale=0.8):
 
     bbox_min = mesh.vertices.min(axis=0)
     bbox_max = mesh.vertices.max(axis=0)
-    bbox_center = (bbox_min + bbox_max) / 2
     bbox_size = (bbox_max - bbox_min).max()
 
-    # Center and scale to fit within [-target_scale, target_scale]
-    normalized_vertices = (mesh.vertices - bbox_center) / (bbox_size / 2 / target_scale)
+    # Scale to fit within [-target_scale, target_scale] (no centering since SAM-3D already centers)
+    normalized_vertices = mesh.vertices / (bbox_size / 2 / target_scale)
     normalized_mesh = mesh.copy()
     normalized_mesh.vertices = normalized_vertices
     normalization_scale = bbox_size / 2 / target_scale
