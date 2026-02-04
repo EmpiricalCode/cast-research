@@ -75,7 +75,7 @@ Rules:v
 - IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, wooden floor, tile).
 - Do NOT include background elements like "wall", "ceiling", or "window" unless they are prominent objects in the image.
 - YOU MUST INCLUDE EVERY OBJECT WITHIN THE IMAGE!!! TRY TO INCLUDE COLOR AND MATERIAL OF OBJECTS IF POSSIBLE.
-- DO NOT INCLUDE THE SKY!!!
+- DO NOT INCLUDE THE SKY!!! DO NOT INCLUDE THE BACKGROUND!!!
 - ALWAYS OPT FOR GENERIC DESCIPTORS WITH MATERIALS (e.g., "wooden table" instead of "dining table", "metal chair" instead of "office chair")
 
 Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
