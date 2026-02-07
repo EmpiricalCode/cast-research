@@ -99,9 +99,9 @@ def main():
     colors = plt.cm.tab10(np.linspace(0, 1, 10))
 
     for idx, (obj_name, transform) in enumerate(positions.items()):
-        # Extract object index from name (e.g., "object_0" -> 0)
-        obj_idx = int(obj_name.split('_')[1])
-        glb_path = os.path.join(sam3d_dir, f"object_{obj_idx}.glb")
+        # obj_name is now just the index (e.g., "0", "1", "2")
+        obj_idx = int(obj_name)
+        glb_path = os.path.join(sam3d_dir, f"{obj_idx}.glb")
 
         if not os.path.exists(glb_path):
             print(f"Warning: {glb_path} not found, skipping")

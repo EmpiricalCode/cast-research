@@ -87,7 +87,7 @@ def main():
         outputs.append(output)
 
         # Save individual object as GLB mesh
-        output_path = os.path.join(output_dir, f"object_{mask_index}.glb")
+        output_path = os.path.join(output_dir, f"{mask_index}.glb")
         if output.get("glb") is not None:
             output["glb"].export(output_path)
             print(f"  Saved 3D mesh to {output_path}")
@@ -95,7 +95,7 @@ def main():
             print(f"  Warning: No mesh generated for mask {mask_index}")
 
         # Save positional metadata
-        metadata[f"object_{mask_index}"] = {
+        metadata[f"{mask_index}"] = {
             "rotation": output["rotation"].cpu().numpy().tolist(),
             "translation": output["translation"].cpu().numpy().tolist(),
             "scale": output["scale"].cpu().numpy().tolist(),

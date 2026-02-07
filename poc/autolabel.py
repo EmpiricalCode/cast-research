@@ -179,14 +179,18 @@ def show_mask(mask, ax, random_color=True):
     h, w = mask.shape[-2:]
     mask_image = mask.reshape(h, w, 1) * color.reshape(1, 1, -1)
     ax.imshow(mask_image)
+    return color[:3]  # Return RGB color without alpha
 
 
-def show_box(box, ax, label):
+def show_box(box, ax, label, color=None):
     x0, y0 = box[0], box[1]
     w, h = box[2] - box[0], box[3] - box[1]
-    ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor='green', facecolor=(0,0,0,0), lw=2))
-    ax.text(x0, y0 - 5, label, fontsize=8, color='white',
-            bbox=dict(boxstyle='round', facecolor='green', alpha=0.7))
+    if color is None:
+        color = [0, 1, 0]  # Default green
+    ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor=color, facecolor=(0,0,0,0), lw=2))
+    # Position label at bottom-left corner of box
+    ax.text(x0, y0 + h + 5, label, fontsize=8, color='white',
+            bbox=dict(boxstyle='round', facecolor=color, alpha=0.7), verticalalignment='top')
 
 
 def get_ram_tags(image_pil, device):
@@ -415,10 +419,15 @@ if __name__ == "__main__":
     plt.figure(figsize=(10, 10))
     plt.imshow(image_cv)
 
+    # Store colors for each mask
+    colors = []
     for mask in masks:
-        show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
-    for box, label in zip(boxes_filt, pred_phrases):
-        show_box(box.numpy(), plt.gca(), label)
+        color = show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
+        colors.append(color)
+
+    # Draw boxes with matching colors
+    for idx, box in enumerate(boxes_filt):
+        show_box(box.numpy(), plt.gca(), str(idx), color=colors[idx])
 
     plt.axis('off')
     plt.savefig(OUTPUT_PATH, bbox_inches="tight", dpi=300, pad_inches=0.0)
