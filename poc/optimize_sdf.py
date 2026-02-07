@@ -200,7 +200,7 @@ def query_sdf_trilinear(sdf_grid, local_points):
     return sampled.squeeze()
 
 
-def optimize_sdf(sdf_grids, transformations, sampled_points, num_iterations=100, learning_rate=0.001):
+def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, num_iterations=500, learning_rate=0.005):
     """
     Optimize object poses to minimize SDF penetration using gradient descent.
 
@@ -208,6 +208,7 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, num_iterations=100,
         sdf_grids: dict of {name: {"grid": [N,N,N] torch tensor, "scale": float}}
         transformations: dict of {name: {"rotation": [4] torch tensor, "translation": [3] torch tensor, "scale": [3] torch tensor}}
         sampled_points: dict of {name: [10000, 3] torch tensor} sampled points on mesh surface in local space
+        support_relations: dict with "supports" key mapping supporting object to list of supported objects
         num_iterations: number of optimization iterations
         learning_rate: optimizer learning rate
     """
@@ -228,10 +229,11 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, num_iterations=100,
             "translation": translation.clone().detach().to(device).requires_grad_(True)
         }
 
-    # Setup optimizer
+    # Setup optimizer with momentum to help escape local minima
     optimizers = {}
     for name, params in optim_params.items():
-        optimizers[name] = optim.Adam([params['rotation_6d'], params['translation']], lr=learning_rate)
+        optimizers[name] = optim.SGD([params['rotation_6d'], params['translation']],
+                                     lr=learning_rate, momentum=0.9)
 
     # Move all data to device before optimization loop
     for name in sdf_grids.keys():
@@ -241,22 +243,27 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, num_iterations=100,
     for name in transformations.keys():
         transformations[name]['scale'] = transformations[name]['scale'].to(device)
 
+    # Build relations lookup
+    # support_relations["relations"] = {object_A: {object_B: {"contact": "flat/point", "type": "support"}}}
+    relations_map = support_relations.get("relations", {})
+
     # Optimization loop
     for iteration in range(num_iterations):
 
-        total_loss = 0.0
+        total_loss = torch.tensor(0.0, device=device)
 
         # Zero gradients
         for optimizer in optimizers.values():
             optimizer.zero_grad()
 
-        # For each target object, compute penetration loss from other objects
+        # Loop through all object pairs
         for name_target in sdf_grids.keys():
-
             for name in sampled_points.keys():
 
                 if name == name_target:
                     continue  # Skip self
+
+                contact_info = relations_map.get(name_target, {}).get(name, None)
 
                 # 1. Transform points from object's local space to world space
                 points_world = local_to_world_transform(
@@ -281,10 +288,32 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, num_iterations=100,
                     local_points
                 )
 
-                # Compute loss: penalize negative SDF values (penetration)
-                penetration_loss = F.relu(-sdf_values).mean()
+                # Check if name supports name_target (if so, skip penetration loss)
+                name_supports_target = (name_target in relations_map.get(name, {}) and
+                                       relations_map[name][name_target].get("type") == "support")
 
-                total_loss += penetration_loss
+                if not name_supports_target:
+                    # Compute loss: penalize negative SDF values (penetration)
+                    penetration_loss = F.relu(-sdf_values).mean()
+                    total_loss += penetration_loss
+
+                if (contact_info is not None):
+
+                    # Penalize minimum distance to prevent objects from drifting apart
+                    min_distance = sdf_values.min()
+                    contact_loss = torch.max(torch.tensor(0.0, device=device), min_distance) * 0.01
+                    total_loss += contact_loss
+
+                    if (contact_info.get("contact", "") == "flat"):
+
+                        # Regularize near-contact region to encourage objects to sit on surfaces
+                        contact_region = (sdf_values > 0) & (sdf_values < 0.05)
+                        if contact_region.any():
+                            regularization_loss = sdf_values[contact_region].mean() * 0.01
+                        else:
+                            regularization_loss = 0.0
+
+                        total_loss += regularization_loss
 
         # Gradient Descent + Backpropagation
         total_loss.backward()
@@ -398,6 +427,19 @@ def main():
 
         sampled_points[name] = points_tensor
 
+    print("\nLOADING SUPPORT RELATIONS\n")
+
+    # Load support relations
+    relations_file = Path(args.dir) / "relations.json"
+    support_relations = {}
+
+    if relations_file.exists():
+        with open(relations_file, 'r') as f:
+            support_relations = json.load(f)
+        print(f"Loaded support relations: {support_relations}")
+    else:
+        print(f"No relations.json found at {relations_file}, using empty support relations")
+
     print("\nCOMPUTING SDF\n")
 
     # Compute SDF grids for each mesh (in normal space)
@@ -421,7 +463,7 @@ def main():
 
     # Run optimization
     print("\nOPTIMIZING POSES\n")
-    optimized_transforms = optimize_sdf(sdf_grids, transformations, sampled_points)
+    optimized_transforms = optimize_sdf(sdf_grids, transformations, sampled_points, support_relations)
 
     # Save optimized transforms to JSON
     output_transforms = {}
