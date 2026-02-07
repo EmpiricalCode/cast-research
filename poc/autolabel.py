@@ -50,7 +50,7 @@ RAM_CHECKPOINT = "./ram_swin_large_14m.pth"
 # Thresholds
 BOX_THRESHOLD = 0.35
 TEXT_THRESHOLD = 0.2
-IOU_THRESHOLD = 0.3
+IOU_THRESHOLD = 0.9
 
 # Qwen2-VL (llama.cpp)
 LLAMA_CPP_BIN = "./llama.cpp/build/bin/llama-mtmd-cli"
@@ -72,10 +72,10 @@ Rules:v
 - Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
 - Be specific but not overly detailed (e.g., "chair" not "wooden dining chair with cushion")
 - Stop after listing each unique object once
-- IMPORTANT: Include the ground/floor surface type (e.g., sand, grass, dirt, concrete, wooden floor, tile).
 - Do NOT include background elements like "wall", "ceiling", or "window" unless they are prominent objects in the image.
 - YOU MUST INCLUDE EVERY OBJECT WITHIN THE IMAGE!!! TRY TO INCLUDE COLOR AND MATERIAL OF OBJECTS IF POSSIBLE.
 - DO NOT INCLUDE THE SKY!!! DO NOT INCLUDE THE BACKGROUND!!!
+- DO NOT INCLUDE OBJECTS THAT ARE ONLY PARTIALLY VISIBLE AND ARE CUT OFF SIGNIFICANTLY!!!
 - ALWAYS OPT FOR GENERIC DESCIPTORS WITH MATERIALS (e.g., "wooden table" instead of "dining table", "metal chair" instead of "office chair")
 
 Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
