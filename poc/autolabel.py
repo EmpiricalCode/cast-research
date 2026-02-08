@@ -173,7 +173,9 @@ def get_grounding_output(model, image, caption, box_threshold, text_threshold, d
 
 def show_mask(mask, ax, random_color=True):
     if random_color:
-        color = np.concatenate([np.random.random(3), np.array([0.6])], axis=0)
+        # Ensure each RGB value is at least 100/255 to avoid dark colors
+        rgb = np.random.uniform(100/255, 1.0, 3)
+        color = np.concatenate([rgb, np.array([0.6])], axis=0)
     else:
         color = np.array([30/255, 144/255, 255/255, 0.6])
     h, w = mask.shape[-2:]
@@ -182,15 +184,18 @@ def show_mask(mask, ax, random_color=True):
     return color[:3]  # Return RGB color without alpha
 
 
-def show_box(box, ax, label, color=None):
-    x0, y0 = box[0], box[1]
-    w, h = box[2] - box[0], box[3] - box[1]
+def show_label(mask, ax, label, color=None):
+    # Use distance transform to find the point furthest from mask edges
+    mask_np = mask.squeeze().astype(np.uint8)
+    dist = cv2.distanceTransform(mask_np, cv2.DIST_L2, 5)
+    _, _, _, max_loc = cv2.minMaxLoc(dist)
+    cx, cy = max_loc[0], max_loc[1]  # x, y in image coordinates
+
     if color is None:
-        color = [0, 1, 0]  # Default green
-    ax.add_patch(plt.Rectangle((x0, y0), w, h, edgecolor=color, facecolor=(0,0,0,0), lw=2))
-    # Position label at bottom-left corner of box
-    ax.text(x0, y0 + h + 5, label, fontsize=8, color='white',
-            bbox=dict(boxstyle='round', facecolor=color, alpha=0.7), verticalalignment='top')
+        color = [0, 1, 0]
+    ax.text(cx, cy, label, fontsize=9, color=color, fontweight='bold',
+            ha='center', va='center',
+            bbox=dict(boxstyle='square', facecolor='black', alpha=0.8, pad=0.1))
 
 
 def get_ram_tags(image_pil, device):
@@ -425,9 +430,9 @@ if __name__ == "__main__":
         color = show_mask(mask.cpu().numpy(), plt.gca(), random_color=True)
         colors.append(color)
 
-    # Draw boxes with matching colors
-    for idx, box in enumerate(boxes_filt):
-        show_box(box.numpy(), plt.gca(), str(idx), color=colors[idx])
+    # Draw index labels using distance transform to find best position inside mask
+    for idx, mask in enumerate(masks):
+        show_label(mask.cpu().numpy(), plt.gca(), str(idx), color=colors[idx])
 
     plt.axis('off')
     plt.savefig(OUTPUT_PATH, bbox_inches="tight", dpi=300, pad_inches=0.0)
