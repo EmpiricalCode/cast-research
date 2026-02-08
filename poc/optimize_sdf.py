@@ -6,11 +6,18 @@ Optimizes object poses to minimize penetration using pre-computed SDF grids.
 import argparse
 import os
 import sys
+import re
+import base64
 import numpy as np
 import trimesh
 import pickle
 from pathlib import Path
 import json
+from dotenv import load_dotenv
+from openai import OpenAI
+
+# Load .env - searches current and parent directories automatically
+load_dotenv()
 
 try:
     import mesh_to_sdf
@@ -347,6 +354,47 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
     return optimized_transforms
 
 
+def extract_relations_from_image(image_path, prompt_path, object_ids):
+    """
+    Use GPT to analyze an image and extract object relations as JSON.
+    """
+    client = OpenAI()
+
+    with open(prompt_path, 'r') as f:
+        prompt = f.read()
+
+    # Inject object IDs into the prompt so the model doesn't hallucinate extra objects
+    object_list = ", ".join(str(i) for i in object_ids)
+    prompt = f"The objects in this image are labeled: {object_list}. ONLY use these object IDs in your output.\n\n{prompt}"
+
+    with open(image_path, 'rb') as f:
+        image_data = base64.b64encode(f.read()).decode('utf-8')
+
+    ext = Path(image_path).suffix.lower()
+    media_type = "image/jpeg" if ext in [".jpg", ".jpeg"] else "image/png"
+
+    response = client.chat.completions.create(
+        model="gpt-5.2",
+        temperature=0,
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{image_data}"}}
+            ]
+        }]
+    )
+
+    content = response.choices[0].message.content.strip()
+
+    # Extract JSON from response
+    json_match = re.search(r'\{.*\}', content, re.DOTALL)
+    if json_match:
+        return json.loads(json_match.group())
+
+    return json.loads(content)
+
+
 def main():
     
     # Parser setup
@@ -427,18 +475,20 @@ def main():
 
         sampled_points[name] = points_tensor
 
-    print("\nLOADING SUPPORT RELATIONS\n")
+    print("\nEXTRACTING RELATIONS FROM IMAGE\n")
 
-    # Load support relations
-    relations_file = Path(args.dir) / "relations.json"
+    # Use GPT-4o to extract object relations from the output image
+    image_path = Path(args.dir).parent / "output.jpg"
+    prompt_path = Path(__file__).parent / "graph_relation_prompt.txt"
     support_relations = {}
 
-    if relations_file.exists():
-        with open(relations_file, 'r') as f:
-            support_relations = json.load(f)
-        print(f"Loaded support relations: {support_relations}")
+    if image_path.exists() and prompt_path.exists():
+        print(f"Extracting relations from {image_path}...")
+        object_ids = sorted(meshes.keys())
+        support_relations = extract_relations_from_image(str(image_path), str(prompt_path), object_ids)
+        print(f"Extracted relations: {json.dumps(support_relations, indent=2)}")
     else:
-        print(f"No relations.json found at {relations_file}, using empty support relations")
+        print(f"Warning: Could not find image ({image_path}) or prompt ({prompt_path}), using empty relations")
 
     print("\nCOMPUTING SDF\n")
 
