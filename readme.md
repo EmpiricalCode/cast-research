@@ -193,5 +193,5 @@ pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.co
 Inference
 
 ```
-PYOPENGL_PLATFORM=egl python3 poc/compute_sdf.py --input                 output/sam3d_results/object_0.glb --resolution 64   
+PYOPENGL_PLATFORM=egl python3 poc/optimize_sdf.py --dir output/sam3d_results --resolution 32 
 ```
