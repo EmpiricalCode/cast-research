@@ -1,0 +1,134 @@
+For every object in this image, output structured JSON describing relations between objects for SDF-based scene optimization.
+
+STEP-BY-STEP PROCESS:
+For each pair of objects (A and B), determine:
+
+1. ARE THEY IN CONTACT?
+   - Only if you can VISIBLY SEE them touching in the image
+   - DO NOT infer hidden/obscured contact points
+
+2. CONTACT TYPE (if in contact):
+   
+   FLAT CONTACT - Any of these conditions:
+   
+   Option A - True planar contact (all must be true):
+   ✓ Both contact surfaces are flat/planar (not curved)
+   ✓ The surfaces are PARALLEL to each other
+   ✓ FULL surface-to-surface contact (not just edge/corner)
+   
+   Option B - Stable curved object on flat surface (all must be true):
+   ✓ One object has a curved bottom (sphere, cylinder, cup, bowl, bottle)
+   ✓ The other object has a flat top surface
+   ✓ The curved object is STABLY RESTING (not tilted, not unstable)
+   ✓ Contact forms a continuous ring, circle, or stable area (not a single point)
+   ✓ The object would remain stable if undisturbed
+   
+   Examples of FLAT contact:
+   - Book lying flat on a table (planar contact)
+   - Box stacked directly on another box (planar contact)
+   - Pumpkin sitting stably on table (stable curved object)
+   - Cup/mug sitting upright on desk (circular rim contact)
+   - Bowl resting on counter (circular base contact)
+   - Bottle standing on surface (circular base contact)
+   
+   POINT CONTACT - Any of these:
+   ✗ Contact appears as a single point, thin line, or sharp edge
+   ✗ Surfaces touch but are NOT parallel (even if both flat)
+   ✗ Curved object touching at edge/corner (not resting on base)
+   ✗ Tilted or unstable curved object
+   ✗ Only partial/minimal contact between surfaces
+   
+   Examples of POINT contact:
+   - Perfect sphere barely touching a surface (unstable, single point)
+   - Tilted cylinder edge touching a surface
+   - Two flat surfaces meeting at an angle
+   - Corner of cube touching another object
+   - Pen/pencil leaning against something (edge contact)
+
+3. RELATION TYPE (if in contact):
+   
+   SUPPORT: A supports B means A→B (UNIDIRECTIONAL - only one entry)
+   - B is resting on/leaning against A
+   - B relies on A to maintain its position
+   - Gravity pulls B onto A
+   - FORMAT: Put the SUPPORTING object as the key, supported object inside
+   - Example: If table supports box → "table": {"box": {...}}
+   - NEVER: "box": {"table": {...}} ← WRONG DIRECTION
+   - CRITICAL: ONLY create A→B entry, NEVER create the reverse B→A entry for support
+   
+   TOUCH: A touches B (BIDIRECTIONAL - two entries required)
+   - Objects are adjacent and touching
+   - Neither relies on the other for stability
+   - Could separate without either falling
+   - CRITICAL: Create BOTH "A": {"B": {...}} AND "B": {"A": {...}}
+   - Only use TOUCH if it's truly not a support relationship
+
+CRITICAL RULES:
+- ONLY describe physically visible contacts in the image
+- If uncertain whether contact is flat or point, default to point
+- SUPPORT = UNIDIRECTIONAL (one entry only): If A supports B, only create "A": {"B": ...}
+- TOUCH = BIDIRECTIONAL (two entries required): If A touches B, create both "A": {"B": ...} and "B": {"A": ...}
+- SUPPORT DIRECTION: The object doing the supporting is the OUTER key, the object being supported is the INNER key
+- IF table SUPPORTS box → "table": {"box": {... "type": "support"}}
+- NEVER: "box": {"table": {... "type": "support"}} ← WRONG! Support is backwards!
+
+OUTPUT FORMAT EXAMPLE:
+If table (2) supports box (3), and box (3) supports book (1), and two pens (4, 5) touch each other:
+{
+  "relations": {
+    "2": {
+      "3": {
+        "contact": "flat",
+        "type": "support",
+        "reason": "Object 2 (table) supports object 3 (box). Box sits on table, would fall without it."
+      }
+    },
+    "3": {
+      "1": {
+        "contact": "flat",
+        "type": "support",
+        "reason": "Object 3 (box) supports object 1 (book). Book rests on box, depends on it."
+      }
+    },
+    "4": {
+      "5": {
+        "contact": "point",
+        "type": "touch",
+        "reason": "Object 4 (pen) touches object 5 (pen) along their sides. Neither depends on the other."
+      }
+    },
+    "5": {
+      "4": {
+        "contact": "point",
+        "type": "touch",
+        "reason": "Object 5 (pen) touches object 4 (pen) along their sides. Neither depends on the other."
+      }
+    }
+  }
+}
+
+WRONG EXAMPLES (DO NOT DO THIS):
+{
+  "relations": {
+    "1": {
+      "3": {"type": "support"} ← WRONG! Says 1 supports 3, but 3 is below
+    },
+    "3": {
+      "1": {"type": "support"}
+    },
+    "1": {
+      "3": {"type": "support"} ← WRONG! Both directions for support - should only be one
+    },
+    "4": {
+      "5": {"type": "touch"} ← WRONG! Missing reverse entry (5→4) for touch
+    }
+  }
+}
+
+REASONING REQUIREMENTS:
+- For FLAT contact: Describe which surfaces are contacting, confirm they are parallel and flat (or stable curved), explain why it's full surface contact or stable circular contact
+- For POINT contact: Describe what type of contact (edge/corner/curved line), explain why it's not flat or stable
+- For SUPPORT: Explain "A supports B because B would fall/move without A" - remember ONLY A→B, never B→A
+- For TOUCH: Explain "Neither depends on the other" - remember BOTH A→B and B→A required
+
+YOUR ONLY OUTPUT SHOULD BE VALID JSON - NO OTHER TEXT!
