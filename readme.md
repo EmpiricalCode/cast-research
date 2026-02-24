@@ -197,3 +197,9 @@ Inference
 ```
 PYOPENGL_PLATFORM=egl python3 poc/optimize_sdf.py --dir output/sam3d_results --resolution 32 
 ```
+
+Sam3D Parallel Inference
+
+```
+python -m torch.distributed.run --nproc_per_node=3 poc/run_sam3d_parallel.py --image ...
+```
