@@ -18,7 +18,16 @@ import matplotlib.pyplot as plt
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, os.path.join(project_root, "src"))
-sys.path.insert(0, project_root)
+
+# segment_anything is nested: segment_anything/segment_anything/__init__.py
+# Force import from the correct location to avoid namespace package resolution
+import importlib.util
+_sa_init = os.path.join(project_root, "segment_anything", "segment_anything", "__init__.py")
+_sa_spec = importlib.util.spec_from_file_location("segment_anything", _sa_init,
+    submodule_search_locations=[os.path.join(project_root, "segment_anything", "segment_anything")])
+_sa_mod = importlib.util.module_from_spec(_sa_spec)
+sys.modules["segment_anything"] = _sa_mod
+_sa_spec.loader.exec_module(_sa_mod)
 
 from segment_anything import build_sam, SamPredictor
 
