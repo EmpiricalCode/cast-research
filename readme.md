@@ -96,6 +96,7 @@ wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin
 Install Llama CPP and Qwen-7B-Instruct
 
 ```
+git clone https://github.com/ggml-org/llama.cpp.git
 cd llama.cpp
 rm -rf build
 cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_HOST_COMPILER=gcc-9 -DCMAKE_C_COMPILER=gcc-9 -DCMAKE_CXX_COMPILER=g++-9
@@ -130,6 +131,8 @@ export PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://download.pytorch
 Install sam3d-objects and core dependencies
 
 ```
+git clone https://github.com/facebookresearch/sam-3d-objects
+cd sam-3d-objects
 pip install -e '.[dev]'
 pip install -e '.[p3d]' # pytorch3d dependency on pytorch is broken, this 2-step approach solves it
 ```
