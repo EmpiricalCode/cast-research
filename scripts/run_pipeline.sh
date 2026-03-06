@@ -22,7 +22,7 @@ conda deactivate
 
 echo "=== Step 3: SDF Optimization ==="
 conda activate sdf
-PYOPENGL_PLATFORM=egl python3 poc/optimize_sdf.py --dir output/sam3d_results --resolution 32
+PYOPENGL_PLATFORM=egl python3 inference/optimize_sdf.py --dir output/sam3d_results --resolution 64
 conda deactivate
 mv output/sam3d_results/optimized_positions.json output/sam3d_results/positions.json
 

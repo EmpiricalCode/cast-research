@@ -157,15 +157,27 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
             "translation": translation.clone().detach().to(device).requires_grad_(True)
         }
 
-    # Setup optimizer with momentum to help escape local minima
+    # Setup optimizer with momentum and cosine annealing
     optimizers = {}
+    schedulers = {}
     for name, params in optim_params.items():
-        optimizers[name] = optim.SGD([params['rotation_6d'], params['translation']],
-                                     lr=learning_rate, momentum=0.9)
+        opt = optim.SGD([params['rotation_6d'], params['translation']],
+                        lr=learning_rate, momentum=0.9)
+        optimizers[name] = opt
+        schedulers[name] = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_iterations, eta_min=0.1 * learning_rate)
 
-    # Move all data to device before optimization loop
+    # Move all data to device and normalize SDF grids
     for name in sdf_grids.keys():
         sdf_grids[name]['grid'] = sdf_grids[name]['grid'].to(device)
+
+        # Normalize negative SDF values (interior) so penetration signal is uniform across objects
+        grid = sdf_grids[name]['grid']
+        neg_mask = grid < 0
+        if neg_mask.any():
+            neg_max = grid[neg_mask].abs().max()
+            print(f"Name {name}: Normalizing SDF grid, neg max = {neg_max:.4f}")
+            grid[neg_mask] = grid[neg_mask] / neg_max
+        sdf_grids[name]['grid'] = grid
     for name in sampled_points.keys():
         sampled_points[name] = sampled_points[name].to(device)
     for name in transformations.keys():
@@ -235,9 +247,9 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
                     if (contact_info.get("contact", "") == "flat"):
 
                         # Regularize near-contact region to encourage objects to sit on surfaces
-                        contact_region = (sdf_values > 0) & (sdf_values < 0.05)
+                        contact_region = (sdf_values > 0) & (sdf_values < 0.1)
                         if contact_region.any():
-                            regularization_loss = sdf_values[contact_region].mean() * 0.01
+                            regularization_loss = sdf_values[contact_region].mean() * 0.1
                         else:
                             regularization_loss = 0.0
 
@@ -248,6 +260,8 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
 
         for optimizer in optimizers.values():
             optimizer.step()
+        for scheduler in schedulers.values():
+            scheduler.step()
 
         print(f"Iteration {iteration+1}/{num_iterations}, Loss: {total_loss.item():.6f}")
 
