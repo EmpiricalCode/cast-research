@@ -33,6 +33,7 @@ from segment_anything import build_sam, SamPredictor
 
 from cast.segmentation import (
     get_qwen2vl_tags,
+    get_gpt_tags,
     get_ram_tags,
     load_image_for_gdino,
     load_grounding_dino,
@@ -68,7 +69,7 @@ QWEN2_VL_MMPROJ_PATH = "./mmproj-Qwen_Qwen2.5-VL-7B-Instruct-f16.gguf"
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Automatic image labeling using Grounding DINO + SAM")
-    parser.add_argument("--tagger", type=str, choices=["ram", "qwen"], default="ram",
+    parser.add_argument("--tagger", type=str, choices=["ram", "qwen", "gpt"], default="ram",
                         help="Tag generation model: 'ram' (default) or 'qwen' (Qwen2-VL-7B)")
     parser.add_argument("--image", type=str, default=IMAGE_PATH,
                         help=f"Path to input image (default: {IMAGE_PATH})")
@@ -85,6 +86,9 @@ if __name__ == "__main__":
     if args.tagger == "qwen":
         print("Running Qwen2-VL to generate tags...")
         tags = get_qwen2vl_tags(os.path.abspath(args.image), LLAMA_CPP_BIN, QWEN2_VL_MODEL_PATH, QWEN2_VL_MMPROJ_PATH)
+    elif args.tagger == "gpt":
+        print("Running GPT to generate tags...")
+        tags = get_gpt_tags(os.path.abspath(args.image))
     else:
         print("Running RAM to generate tags...")
         tags = get_ram_tags(image_pil, RAM_CHECKPOINT, DEVICE)

@@ -1,9 +1,15 @@
 import subprocess
 import sys
+import os
+import base64
 import numpy as np
 import torch
 import cv2
 from PIL import Image
+from dotenv import load_dotenv
+from openai import OpenAI
+
+load_dotenv()
 
 import torchvision.transforms as TS
 import groundingdino.datasets.transforms as T
@@ -150,6 +156,49 @@ def show_label(mask, ax, label, color=None):
     ax.text(cx, cy, label, fontsize=9, color=color, fontweight='bold',
             ha='center', va='center',
             bbox=dict(boxstyle='square', facecolor='black', alpha=0.8, pad=0.1))
+
+
+def get_gpt_tags(image_path):
+    """
+    Use GPT via OpenAI API to identify all distinct objects in an image.
+    Returns a comma-separated string of object tags.
+    """
+    client = OpenAI()
+
+    with open(image_path, "rb") as f:
+        b64_image = base64.b64encode(f.read()).decode("utf-8")
+
+    prompt = """List all distinct object types visible in this image.
+Rules:
+- Output ONLY a comma-separated list of object names, nothing else
+- List each object type only ONCE, even if there are multiple instances (e.g., 3 chairs = just "chair")
+- NEVER repeat any object name - each word should appear only once in your output
+- Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
+- Do NOT be overly detailed (e.g., "chair" not "wooden dining chair with cushion")
+- Stop after listing each unique object once
+- Do NOT include background elements like "wall", "ceiling", or "window" unless they are prominent objects in the image.
+- YOU MUST INCLUDE EVERY OBJECT WITHIN THE IMAGE!!!
+- DO NOT INCLUDE THE SKY!!! DO NOT INCLUDE THE BACKGROUND!!!
+- DO NOT INCLUDE OBJECTS THAT ARE ONLY PARTIALLY VISIBLE AND ARE CUT OFF SIGNIFICANTLY!!!
+- FOR CONTAINERS CONTAINING AMORPHOUS OBJECTS, GROUP THEM TOGETHER USING KEYWORD "with" (Ex. "bowl with salad" instead of "bowl, salad", "plate with pasta" instead of "plate, pasta")
+
+Example output: sand, couch, lamp, coffee table, book, plant, window, rug
+"""
+
+    response = client.chat.completions.create(
+        model="gpt-5.2",
+        messages=[{
+            "role": "user",
+            "content": [
+                {"type": "text", "text": prompt},
+                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64_image}"}},
+            ],
+        }],
+        max_completion_tokens=256,
+        temperature=0,
+    )
+
+    return response.choices[0].message.content.strip()
 
 
 def get_ram_tags(image_pil, ram_checkpoint, device):

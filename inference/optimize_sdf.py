@@ -107,7 +107,7 @@ def main():
 
     print("\nEXTRACTING RELATIONS FROM IMAGE\n")
 
-    # Use GPT-4o to extract object relations from the output image
+    # Use GPT to extract object relations from the output image
     image_path = Path(args.dir).parent / "output.jpg"
     support_relations = {}
 
