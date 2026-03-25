@@ -31,11 +31,11 @@ def main():
     # Parser setup
     parser = argparse.ArgumentParser(description="Compute SDF grid using mesh_to_sdf")
 
-    parser.add_argument("--dir", type=str, required=True, default=os.path.join(project_root, "output/sam3d_results"),
+    parser.add_argument("--dir", type=str, required=True,
                         help="Directory containing input/output files")
     parser.add_argument("--resolution", type=int, default=64,
                         help="SDF resolution NxNxN (default: 64)")
-    parser.add_argument("--target-scale", default=0.9, help="Print verbose output")
+    parser.add_argument("--target-scale", type=float, default=0.9, help="Target normalization scale")
 
     args = parser.parse_args()
 

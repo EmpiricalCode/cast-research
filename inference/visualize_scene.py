@@ -3,6 +3,7 @@
 Visualize the 3D scene by loading GLB objects, transforming them to world space,
 and exporting a colored PLY point cloud.
 """
+import argparse
 import os
 import sys
 import json
@@ -39,8 +40,15 @@ def load_object_points(glb_path, num_samples=20000):
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Visualize 3D scene as colored point cloud PLY")
+    parser.add_argument("--dir", type=str, default=os.path.join(project_root, "output/sam3d_results"),
+                        help="Directory containing GLB files and positions.json")
+    parser.add_argument("--output", type=str, default=None,
+                        help="Output PLY path (default: <dir>/../scene_visualization.ply)")
+    args = parser.parse_args()
+
     # Paths
-    sam3d_dir = os.path.join(project_root, "output/sam3d_results")
+    sam3d_dir = args.dir
     positions_path = os.path.join(sam3d_dir, "positions.json")
 
     # Load positions metadata
@@ -98,7 +106,7 @@ def main():
     print(f"\nTotal points in scene: {len(all_points)}")
 
     # Export to PLY
-    output_path = os.path.join(project_root, "output/scene_visualization.ply")
+    output_path = args.output or os.path.join(os.path.dirname(sam3d_dir), "scene_visualization.ply")
     write_ply(all_points, all_colors, output_path)
 
     print(f"\nSaved PLY to {output_path} ({len(all_points):,} points)")

@@ -44,9 +44,7 @@ from cast.segmentation import (
 
 # ============== CONFIG ==============
 IMAGE_PATH = "image.jpg"
-OUTPUT_DIR = "output"
-OUTPUT_PATH = os.path.join(OUTPUT_DIR, "output.jpg")
-MASKS_DIR = os.path.join(OUTPUT_DIR, "masks")
+DEFAULT_OUTPUT_DIR = "output"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
 # Model checkpoints - UPDATE THESE PATHS
@@ -56,9 +54,9 @@ SAM_CHECKPOINT = "./sam_vit_h_4b8939.pth"
 RAM_CHECKPOINT = "./ram_swin_large_14m.pth"
 
 # Thresholds
-BOX_THRESHOLD = 0.35
+BOX_THRESHOLD = 0.25
 TEXT_THRESHOLD = 0.2
-IOU_THRESHOLD = 0.9
+IOU_THRESHOLD = 0.5
 
 # Qwen2-VL (llama.cpp)
 LLAMA_CPP_BIN = "./llama.cpp/build/bin/llama-mtmd-cli"
@@ -73,7 +71,13 @@ if __name__ == "__main__":
                         help="Tag generation model: 'ram' (default) or 'qwen' (Qwen2-VL-7B)")
     parser.add_argument("--image", type=str, default=IMAGE_PATH,
                         help=f"Path to input image (default: {IMAGE_PATH})")
+    parser.add_argument("--output-dir", type=str, default=DEFAULT_OUTPUT_DIR,
+                        help=f"Output directory (default: {DEFAULT_OUTPUT_DIR})")
     args = parser.parse_args()
+
+    OUTPUT_DIR = args.output_dir
+    OUTPUT_PATH = os.path.join(OUTPUT_DIR, "output.jpg")
+    MASKS_DIR = os.path.join(OUTPUT_DIR, "masks")
 
     print(f"Using device: {DEVICE}")
 
@@ -169,6 +173,23 @@ if __name__ == "__main__":
     boxes_filt = boxes_filt[nms_idx]
     pred_phrases = [pred_phrases[idx] for idx in nms_idx]
     print(f"After NMS: {boxes_filt.shape[0]} boxes")
+
+    # Save bounding box visualization
+    print("Saving bounding box visualization...")
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    fig_bb, ax_bb = plt.subplots(1, figsize=(10, 10))
+    ax_bb.imshow(Image.open(args.image))
+    for i in range(boxes_filt.size(0)):
+        x1, y1, x2, y2 = boxes_filt[i].tolist()
+        rect = plt.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2, edgecolor='lime', facecolor='none')
+        ax_bb.add_patch(rect)
+        ax_bb.text(x1, y1 - 4, pred_phrases[i], fontsize=8, color='white',
+                   bbox=dict(facecolor='lime', alpha=0.7, edgecolor='none', pad=1))
+    ax_bb.axis('off')
+    bb_path = os.path.join(OUTPUT_DIR, "bounding_boxes.jpg")
+    fig_bb.savefig(bb_path, bbox_inches="tight", dpi=300, pad_inches=0.0)
+    plt.close(fig_bb)
+    print(f"Saved bounding boxes to {bb_path}")
 
     # 4. SAM: Segment each box
     print("Running SAM...")

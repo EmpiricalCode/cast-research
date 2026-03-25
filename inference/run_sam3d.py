@@ -73,9 +73,9 @@ def main():
                 seed=42,
                 stage1_only=False,
                 with_mesh_postprocess=True,
-                with_texture_baking=False,  # Disabled: requires diff_gaussian_rasterization
+                with_texture_baking=True,  # Disabled: requires diff_gaussian_rasterization
                 with_layout_postprocess=False,
-                use_vertex_color=True,  # Use vertex colors instead of texture
+                # use_vertex_color=True,  # Use vertex colors instead of texture
                 stage1_inference_steps=None,
                 pointmap=None,
             )
