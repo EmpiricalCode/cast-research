@@ -49,6 +49,13 @@ Install SAM:
 python -m pip install -e segment_anything
 ```
 
+Install GPT dependencies:
+
+```
+pip install openai 
+pip install dotenv
+```
+
 Install PyTorch
 
 ```
@@ -131,7 +138,7 @@ export PIP_EXTRA_INDEX_URL="https://pypi.ngc.nvidia.com https://download.pytorch
 Install sam3d-objects and core dependencies
 
 ```
-git clone https://github.com/facebookresearch/sam-3d-objects
+git clone https://github.com/EmpiricalCode/sam-3d-objects-gsplat
 cd sam-3d-objects
 pip install -e '.[dev]'
 pip install -e '.[p3d]' # pytorch3d dependency on pytorch is broken, this 2-step approach solves it
