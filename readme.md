@@ -2,21 +2,21 @@
 
 ## Examples
 
-### House Scene
-
-Original Image:
-![House Input](house.jpg)
-
-3D Scene:
-![House 3D Output](house_qwen_filtered.png)
-
 ### Lamp Scene
 
 Original Image:
 ![Lamp Input](lamp.jpg)
 
 3D Scene:
-![Lamp 3D Output](lamp_qwen_filtered.jpg)
+![Lamp Output](lamp.png)
+
+### Food Scene
+
+Original Image:
+![Lamp Input](burger.jpg)
+
+3D Scene:
+![Lamp 3D Output](burger.png)
 
 # AutoSegment Setup guide
 
@@ -43,10 +43,15 @@ mv Grounded-Segment-Anything/GroundingDINO GroundingDINO
 mv Grounded-Segment-Anything/segment_anything segment_anything
 ```
 
-Install SAM:
+Install SAM3:
 
 ```
-python -m pip install -e segment_anything
+git clone https://github.com/facebookresearch/sam3.git
+cd sam3
+pip install -e .
+
+pip install pycocotools
+pip install matplotlib
 ```
 
 Install GPT dependencies:
@@ -59,13 +64,7 @@ pip install dotenv
 Install PyTorch
 
 ```
-pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
-```
-
-Install GroundingDINO
-
-```
-pip install --no-build-isolation -e GroundingDINO
+pip install --force-reinstall torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
 ```
 
 Install diffusers:
@@ -86,18 +85,23 @@ Correct opencv, numpy, and transformers:
 
 ```
 pip install opencv-python==4.8.1.78
-pip install numpy==1.26.4
+pip install "numpy>=1.26,<2"
 pip install transformers==4.35.2  
+```
+
+Einops
+
+```
+pip install einops
 ```
 
 Download model weights:
 
 ```
-wget https://dl.fbaipublicfiles.com/segment_anything/sam_vit_h_4b8939.pth
-wget https://github.com/IDEA-Research/GroundingDINO/releases/download/v0.1.0-alpha/groundingdino_swint_ogc.pth
-
 wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/ram_swin_large_14m.pth
 wget https://huggingface.co/spaces/xinyu1205/Tag2Text/resolve/main/tag2text_swin_14m.pth
+
+hf download facebook/sam3 --local-dir ./sam3-checkpoint
 ```
 
 Install Llama CPP and Qwen-7B-Instruct
