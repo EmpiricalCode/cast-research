@@ -35,4 +35,7 @@ mv "$RUN_DIR/sam3d_results/optimized_positions.json" "$RUN_DIR/sam3d_results/pos
 echo "=== Step 4: Visualize Scene ==="
 conda run --no-banner -n sam3d-objects python inference/visualize_scene.py --dir "$RUN_DIR/sam3d_results" --output "$RUN_DIR/scene_visualization.ply"
 
+echo "=== Step 5: Export Scene ==="
+conda run --no-banner -n sam3d-objects python inference/export_scene.py --dir "$RUN_DIR/sam3d_results" --output "$RUN_DIR/scene.ply"
+
 echo "=== Done === Results in $RUN_DIR ==="
