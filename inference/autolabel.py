@@ -1,8 +1,7 @@
 """
-Automatic image labeling using RAM + Grounding DINO + SAM
-1. RAM generates tags for the image
-2. Grounding DINO detects bounding boxes for those tags
-3. SAM segments each detected box
+Automatic image labeling using SAM3
+1. Generate tags for the image (RAM, Qwen2-VL, or GPT)
+2. SAM3 performs text-grounded segmentation for each tag
 """
 import argparse
 import os
@@ -18,26 +17,15 @@ import matplotlib.pyplot as plt
 script_dir = os.path.dirname(os.path.abspath(__file__))
 project_root = os.path.dirname(script_dir)
 sys.path.insert(0, os.path.join(project_root, "src"))
+sys.path.insert(0, os.path.join(project_root, "sam3"))
 
-# segment_anything is nested: segment_anything/segment_anything/__init__.py
-# Force import from the correct location to avoid namespace package resolution
-import importlib.util
-_sa_init = os.path.join(project_root, "segment_anything", "segment_anything", "__init__.py")
-_sa_spec = importlib.util.spec_from_file_location("segment_anything", _sa_init,
-    submodule_search_locations=[os.path.join(project_root, "segment_anything", "segment_anything")])
-_sa_mod = importlib.util.module_from_spec(_sa_spec)
-sys.modules["segment_anything"] = _sa_mod
-_sa_spec.loader.exec_module(_sa_mod)
-
-from segment_anything import build_sam, SamPredictor
+from sam3 import build_sam3_image_model
+from sam3.model.sam3_image_processor import Sam3Processor
 
 from cast.segmentation import (
     get_qwen2vl_tags,
     get_gpt_tags,
     get_ram_tags,
-    load_image_for_gdino,
-    load_grounding_dino,
-    get_grounding_output,
     show_mask,
     show_label,
 )
@@ -47,16 +35,13 @@ IMAGE_PATH = "image.jpg"
 DEFAULT_OUTPUT_DIR = "output"
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-# Model checkpoints - UPDATE THESE PATHS
-GROUNDING_DINO_CONFIG = "./GroundingDINO/groundingdino/config/GroundingDINO_SwinT_OGC.py"
-GROUNDING_DINO_CHECKPOINT = "./groundingdino_swint_ogc.pth"
-SAM_CHECKPOINT = "./sam_vit_h_4b8939.pth"
+# Model checkpoints
+SAM3_CHECKPOINT = "./sam3-checkpoint/sam3.pt"
 RAM_CHECKPOINT = "./ram_swin_large_14m.pth"
 
 # Thresholds
-BOX_THRESHOLD = 0.25
-TEXT_THRESHOLD = 0.2
 IOU_THRESHOLD = 0.5
+SAM3_CONFIDENCE = 0.5
 
 # Qwen2-VL (llama.cpp)
 LLAMA_CPP_BIN = "./llama.cpp/build/bin/llama-mtmd-cli"
@@ -66,7 +51,7 @@ QWEN2_VL_MMPROJ_PATH = "./mmproj-Qwen_Qwen2.5-VL-7B-Instruct-f16.gguf"
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Automatic image labeling using Grounding DINO + SAM")
+    parser = argparse.ArgumentParser(description="Automatic image labeling using SAM3")
     parser.add_argument("--tagger", type=str, choices=["ram", "qwen", "gpt"], default="ram",
                         help="Tag generation model: 'ram' (default) or 'qwen' (Qwen2-VL-7B)")
     parser.add_argument("--image", type=str, default=IMAGE_PATH,
@@ -83,7 +68,7 @@ if __name__ == "__main__":
 
     # 1. Load image
     print("Loading image...")
-    image_pil, image = load_image_for_gdino(args.image)
+    image_pil = Image.open(args.image).convert("RGB")
     W, H = image_pil.size
 
     # 2. Generate tags using selected model
@@ -102,9 +87,7 @@ if __name__ == "__main__":
     # Filter out forbidden words
     FORBIDDEN_WORDS = {'sky'}
 
-    # Convert comma-separated tags to period-separated format for Grounding DINO
-    # Grounding DINO expects tags like "cat . dog . chair" not "cat, dog, chair"
-    # Also deduplicate tags while preserving order
+    # Parse and deduplicate tags
     tag_list = [t.strip() for t in tags.replace('.', ',').split(',') if t.strip()]
 
     # Filter out tags containing forbidden words
@@ -125,54 +108,54 @@ if __name__ == "__main__":
         if tag.lower() not in seen:
             seen.add(tag.lower())
             unique_tags.append(tag)
-    grounding_tags = ' . '.join(unique_tags)
-    print(f"Grounding DINO input: {grounding_tags}")
+    print(f"SAM3 input tags: {unique_tags}")
 
-    # 3. Grounding DINO: Detect boxes for each tag separately to avoid cross-tag confusion
-    print("Running Grounding DINO...")
-    grounding_model = load_grounding_dino(GROUNDING_DINO_CONFIG, GROUNDING_DINO_CHECKPOINT, DEVICE)
+    # 3. SAM3: Text-grounded segmentation
+    print("Loading SAM3...")
+    sam3_model = build_sam3_image_model(device=DEVICE, checkpoint_path=SAM3_CHECKPOINT, load_from_HF=False)
+    processor = Sam3Processor(sam3_model, device=DEVICE, confidence_threshold=SAM3_CONFIDENCE)
 
+    image_cv = cv2.imread(args.image)
+    image_cv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
+
+    print("Setting image...")
+    state = processor.set_image(image_pil)
+
+    all_masks = []
     all_boxes = []
     all_scores = []
     all_phrases = []
 
     for tag in unique_tags:
-        boxes, scores_t, phrases = get_grounding_output(
-            grounding_model, image, tag, BOX_THRESHOLD, TEXT_THRESHOLD, DEVICE
-        )
-        for i in range(len(boxes)):
-            all_boxes.append(boxes[i])
-            all_scores.append(scores_t[i].item())
-            # Use the original tag name instead of parsed phrase
-            all_phrases.append(f"{tag}({scores_t[i].item():.2f})")
+        processor.reset_all_prompts(state)
+        state = processor.set_text_prompt(tag, state=state)
 
-    if all_boxes:
-        boxes_filt = torch.stack(all_boxes)
-        scores = torch.tensor(all_scores)
+        if "masks" in state and state["masks"].shape[0] > 0:
+            tag_masks = state["masks"]    # (N, 1, H, W) bool
+            tag_boxes = state["boxes"]    # (N, 4) [x0,y0,x1,y1] px
+            tag_scores = state["scores"]  # (N,)
+
+            nms_idx = torchvision.ops.nms(tag_boxes, tag_scores, IOU_THRESHOLD)
+            tag_masks = tag_masks[nms_idx]
+            tag_boxes = tag_boxes[nms_idx]
+            tag_scores = tag_scores[nms_idx]
+
+            for i in range(tag_masks.shape[0]):
+                all_masks.append(tag_masks[i])
+                all_boxes.append(tag_boxes[i])
+                all_scores.append(tag_scores[i].item())
+                all_phrases.append(f"{tag}({tag_scores[i].item():.2f})")
+
+    if all_masks:
+        masks = torch.stack(all_masks)
+        boxes_filt = torch.stack(all_boxes).cpu()
         pred_phrases = all_phrases
     else:
+        masks = torch.zeros((0, 1, H, W), dtype=torch.bool)
         boxes_filt = torch.zeros((0, 4))
-        scores = torch.tensor([])
         pred_phrases = []
 
-    # Convert boxes from [cx, cy, w, h] to [x1, y1, x2, y2]
-    for i in range(boxes_filt.size(0)):
-        boxes_filt[i] = boxes_filt[i] * torch.Tensor([W, H, W, H])
-        boxes_filt[i][:2] -= boxes_filt[i][2:] / 2
-        boxes_filt[i][2:] += boxes_filt[i][:2]
-
-    # Apply class-aware NMS (batched_nms) - only suppresses boxes of the same class
-    boxes_filt = boxes_filt.cpu()
-    print(f"Before NMS: {boxes_filt.shape[0]} boxes")
-
-    # Create class IDs from tag names (boxes with same tag get same class ID)
-    tag_to_id = {tag: i for i, tag in enumerate(unique_tags)}
-    class_ids = torch.tensor([tag_to_id[phrase.rsplit('(', 1)[0]] for phrase in pred_phrases])
-
-    nms_idx = torchvision.ops.batched_nms(boxes_filt, scores, class_ids, IOU_THRESHOLD).numpy().tolist()
-    boxes_filt = boxes_filt[nms_idx]
-    pred_phrases = [pred_phrases[idx] for idx in nms_idx]
-    print(f"After NMS: {boxes_filt.shape[0]} boxes")
+    print(f"Total detections: {len(masks)}")
 
     # Save bounding box visualization
     print("Saving bounding box visualization...")
@@ -190,22 +173,6 @@ if __name__ == "__main__":
     fig_bb.savefig(bb_path, bbox_inches="tight", dpi=300, pad_inches=0.0)
     plt.close(fig_bb)
     print(f"Saved bounding boxes to {bb_path}")
-
-    # 4. SAM: Segment each box
-    print("Running SAM...")
-    sam_predictor = SamPredictor(build_sam(checkpoint=SAM_CHECKPOINT).to(DEVICE))
-
-    image_cv = cv2.imread(args.image)
-    image_cv = cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB)
-    sam_predictor.set_image(image_cv)
-
-    transformed_boxes = sam_predictor.transform.apply_boxes_torch(boxes_filt, image_cv.shape[:2]).to(DEVICE)
-    masks, _, _ = sam_predictor.predict_torch(
-        point_coords=None,
-        point_labels=None,
-        boxes=transformed_boxes,
-        multimask_output=False,
-    )
 
     # Deduplicate masks based on containment
     print("Deduplicating masks based on containment...")

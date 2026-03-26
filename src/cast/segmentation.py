@@ -12,10 +12,6 @@ from openai import OpenAI
 load_dotenv()
 
 import torchvision.transforms as TS
-import groundingdino.datasets.transforms as T
-from groundingdino.models import build_model
-from groundingdino.util.slconfig import SLConfig
-from groundingdino.util.utils import clean_state_dict, get_phrases_from_posmap
 from ram.models import ram
 from ram import inference_ram
 
@@ -62,74 +58,6 @@ Example output: sand, couch, lamp, coffee table, book, plant, window, rug"""
     return result.stdout.strip()
 
 
-def load_image_for_gdino(image_path):
-    """Load and preprocess image for Grounding DINO."""
-    image_pil = Image.open(image_path).convert("RGB")
-    transform = T.Compose([
-        T.RandomResize([800], max_size=1333),
-        T.ToTensor(),
-        T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225]),
-    ])
-    image, _ = transform(image_pil, None)
-    return image_pil, image
-
-
-def load_grounding_dino(config_path, checkpoint_path, device):
-    args = SLConfig.fromfile(config_path)
-    args.device = device
-    model = build_model(args)
-    checkpoint = torch.load(checkpoint_path, map_location="cpu")
-    model.load_state_dict(clean_state_dict(checkpoint["model"]), strict=False)
-    model.eval()
-    return model
-
-
-def get_grounding_output(model, image, caption, box_threshold, text_threshold, device):
-    caption = caption.lower().strip()
-    if not caption.endswith("."):
-        caption = caption + "."
-
-    model = model.to(device)
-    image = image.to(device)
-
-    with torch.no_grad():
-        outputs = model(image[None], captions=[caption])
-
-    logits = outputs["pred_logits"].cpu().sigmoid()[0]
-    boxes = outputs["pred_boxes"].cpu()[0]
-
-    # Filter by threshold
-    filt_mask = logits.max(dim=1)[0] > box_threshold
-    logits_filt = logits[filt_mask]
-    boxes_filt = boxes[filt_mask]
-
-    # Get phrases
-    tokenizer = model.tokenizer
-    tokenized = tokenizer(caption)
-
-    pred_phrases = []
-    scores = []
-    for logit, box in zip(logits_filt, boxes_filt):
-        pred_phrase = get_phrases_from_posmap(logit > text_threshold, tokenized, tokenizer)
-        # Clean up repeated words (e.g., "beach towel beach towel" -> "beach towel")
-        words = pred_phrase.split()
-        if len(words) > 1:
-            # Find the shortest repeating pattern
-            for pattern_len in range(1, len(words) // 2 + 1):
-                pattern = words[:pattern_len]
-                is_repeat = True
-                for i in range(pattern_len, len(words)):
-                    if words[i] != pattern[i % pattern_len]:
-                        is_repeat = False
-                        break
-                if is_repeat:
-                    pred_phrase = ' '.join(pattern)
-                    break
-        pred_phrases.append(pred_phrase + f"({logit.max().item():.2f})")
-        scores.append(logit.max().item())
-
-    return boxes_filt, torch.Tensor(scores), pred_phrases
-
 
 def show_mask(mask, ax, random_color=True):
     if random_color:
@@ -168,19 +96,24 @@ def get_gpt_tags(image_path):
     with open(image_path, "rb") as f:
         b64_image = base64.b64encode(f.read()).decode("utf-8")
 
-    prompt = """List all distinct object types visible in this image.
+    prompt = """You are part of a 3D scene reconstruction pipeline. Your job is to identify every distinct object in this image so that each one can be turned into its own 3D mesh. The full scene will be represented as a collection of these meshes, so your list must be complete and each entry should correspond to something that makes sense as a standalone mesh.
+
+Before listing, reason about the scene: if two things are physically part of the same object (e.g., a countertop and the cabinet it is glued onto), they should be ONE entry (countertop with cabinet). If two things are distinct and separable (e.g., a book sitting on a table), they should be SEPARATE entries.
+
+List all distinct object types visible in this image.
 Rules:
 - Output ONLY a comma-separated list of object names, nothing else
 - List each object type only ONCE, even if there are multiple instances (e.g., 3 chairs = just "chair")
-- NEVER repeat any object name - each word should appear only once in your output
 - Do NOT include sub-parts of objects (e.g., if there's a lamp, don't also list "lampshade" separately)
-- Do NOT be overly detailed (e.g., "chair" not "wooden dining chair with cushion")
+- Do NOT be overly detailed (e.g., "chair" not "wooden dining chair with cushion"). Keep entries as simple as possible. Combined entries should be joined using keyword "with".
 - Stop after listing each unique object once
-- Do NOT include background elements like "wall", "ceiling", or "window" unless they are prominent objects in the image.
+- Do NOT include background elements like "wall", "ceiling", or "window" unless they are objects fully contained in the image (IE, a window on a table).
+- When describing containers with amorphous contents, group them together (e.g., "bowl with sauce" instead of "bowl, pudding". Keyword with.)
+- Think about the environment as a whole before listing. For each object, ask yourself "Does it make sense for this object exist independently? Or is it physically connected to or part of another object? IE, a counter-top shouldn't be a seperate object from the counter itself. However, distinct books stacked on top of each other should be seperate.
 - YOU MUST INCLUDE EVERY OBJECT WITHIN THE IMAGE!!!
 - DO NOT INCLUDE THE SKY!!! DO NOT INCLUDE THE BACKGROUND!!!
 - DO NOT INCLUDE OBJECTS THAT ARE ONLY PARTIALLY VISIBLE AND ARE CUT OFF SIGNIFICANTLY!!!
-- FOR CONTAINERS CONTAINING AMORPHOUS OBJECTS, GROUP THEM TOGETHER USING KEYWORD "with" (Ex. "bowl with salad" instead of "bowl, salad", "plate with pasta" instead of "plate, pasta")
+- BE CAREFUL NOT TO MISS A SINGLE VALID OBJECT
 
 Example output: sand, couch, lamp, coffee table, book, plant, window, rug
 """
