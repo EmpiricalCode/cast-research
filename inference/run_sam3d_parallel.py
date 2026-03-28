@@ -92,9 +92,8 @@ def main():
                 seed=42,
                 stage1_only=False,
                 with_mesh_postprocess=True,
-                with_texture_baking=False,
+                with_texture_baking=True,
                 with_layout_postprocess=False,
-                use_vertex_color=True,
                 stage1_inference_steps=None,
                 pointmap=None,
             )
