@@ -37,6 +37,7 @@ def main():
                         help="Directory containing mask PNGs")
     parser.add_argument("--output-dir", type=str, default=os.path.join(project_root, "output/sam3d_results"),
                         help="Output directory for 3D results")
+    parser.add_argument("--seed", type=int, default=123, help="Random seed (default: 123)")
     args = parser.parse_args()
 
     # Initialize distributed
@@ -89,7 +90,7 @@ def main():
             output = inference._pipeline.run(
                 rgba_image,
                 None,
-                seed=42,
+                seed=args.seed,
                 stage1_only=False,
                 with_mesh_postprocess=True,
                 with_texture_baking=True,
