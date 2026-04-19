@@ -75,7 +75,11 @@ def show_mask(mask, ax, random_color=True):
 def show_label(mask, ax, label, color=None):
     # Use distance transform to find the point furthest from mask edges
     mask_np = mask.squeeze().astype(np.uint8)
-    dist = cv2.distanceTransform(mask_np, cv2.DIST_L2, 5)
+    # Pad with zeros so image edges are treated as mask boundaries
+    padded = np.pad(mask_np, pad_width=1, mode='constant', constant_values=0)
+    dist = cv2.distanceTransform(padded, cv2.DIST_L2, 5)
+    # Remove padding to get back to original coordinates
+    dist = dist[1:-1, 1:-1]
     _, _, _, max_loc = cv2.minMaxLoc(dist)
     cx, cy = max_loc[0], max_loc[1]  # x, y in image coordinates
 
