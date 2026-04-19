@@ -36,6 +36,8 @@ def main():
     parser.add_argument("--resolution", type=int, default=64,
                         help="SDF resolution NxNxN (default: 64)")
     parser.add_argument("--target-scale", type=float, default=0.9, help="Target normalization scale")
+    parser.add_argument("--lr", type=float, default=0.005, help="Learning rate for optimization")
+    parser.add_argument("--num-restarts", type=int, default=200, help="Number of random initial starts to try")
 
     args = parser.parse_args()
 
@@ -142,7 +144,8 @@ def main():
 
     # Run optimization
     print("\nOPTIMIZING POSES\n")
-    optimized_transforms = optimize_sdf(sdf_grids, transformations, sampled_points, support_relations)
+    print(f"Learning rate: {args.lr}, restarts: {args.num_restarts}")
+    optimized_transforms = optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, learning_rate=args.lr, num_restarts=args.num_restarts)
 
     # Save optimized transforms to JSON
     output_transforms = {}

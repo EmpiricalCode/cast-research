@@ -128,7 +128,57 @@ def query_sdf_trilinear(sdf_grid, local_points):
     return sampled.squeeze()
 
 
-def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, num_iterations=500, learning_rate=0.005):
+def _compute_loss(sdf_grids, sampled_points, transformations, optim_params, relations_map, support_sets, device):
+    """Compute total loss for a given set of parameters (no gradients needed)."""
+    total_loss = torch.tensor(0.0, device=device)
+
+    for name_target in sdf_grids.keys():
+        for name in sampled_points.keys():
+            if name == name_target:
+                continue
+
+            contact_info = relations_map.get(name_target, {}).get(name, None)
+
+            points_world = local_to_world_6d(
+                sampled_points[name],
+                optim_params[name]['rotation_6d'],
+                optim_params[name]['translation'],
+                transformations[name]['scale']
+            )
+
+            local_points = world_to_local_6d(
+                points_world,
+                optim_params[name_target]['rotation_6d'],
+                optim_params[name_target]['translation'],
+                transformations[name_target]['scale'],
+                sdf_grids[name_target]['scale']
+            )
+
+            sdf_values = query_sdf_trilinear(
+                sdf_grids[name_target]['grid'],
+                local_points
+            )
+
+            name_supports_target = name_target in support_sets.get(name, set())
+
+            if not name_supports_target:
+                penetration_loss = F.relu(-sdf_values).mean()
+                total_loss += penetration_loss
+
+            if contact_info is not None:
+                min_distance = sdf_values.min()
+                contact_loss = torch.max(torch.tensor(0.0, device=device), min_distance) * 0.01
+                total_loss += contact_loss
+
+                if contact_info.get("contact", "") == "flat":
+                    contact_region = (sdf_values > 0) & (sdf_values < 0.1)
+                    if contact_region.any():
+                        total_loss += sdf_values[contact_region].mean() * 0.1
+
+    return total_loss
+
+
+def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, num_iterations=500, learning_rate=0.005, num_restarts=200):
     """
     Optimize object poses to minimize SDF penetration using gradient descent.
 
@@ -187,83 +237,155 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
     # support_relations["relations"] = {object_A: {object_B: {"contact": "flat/point", "type": "support"}}}
     relations_map = support_relations.get("relations", {})
 
+    # Build transitive support sets: for each object, the full set of objects it
+    # (transitively) supports via support edges.
+    def _build_support_set(source, relations_map):
+        """BFS/DFS to find all objects transitively supported by source."""
+        visited = set()
+        stack = [source]
+        while stack:
+            node = stack.pop()
+            for neighbor, info in relations_map.get(node, {}).items():
+                if info.get("type") == "support" and neighbor not in visited:
+                    visited.add(neighbor)
+                    stack.append(neighbor)
+        return visited
+
+    support_sets = {name: _build_support_set(name, relations_map) for name in sdf_grids.keys()}
+
+    for name, supported in support_sets.items():
+        if supported:
+            print(f"  {name} transitively supports: {sorted(supported)}")
+        else:
+            print(f"  {name} supports nothing")
+
+    # Random restart search: try N random perturbations of translations (90%-110%)
+    # and pick the one with lowest initial loss
+    if num_restarts > 1:
+        print(f"\nSearching {num_restarts} random initial starts...")
+        best_loss = float('inf')
+        best_translations = None
+
+        for restart in range(num_restarts):
+            trial_params = {}
+            for name, params in optim_params.items():
+                scale_factor = 0.9 + 0.2 * torch.rand(3, device=device)  # uniform [0.9, 1.1]
+                trial_params[name] = {
+                    "rotation_6d": params['rotation_6d'].detach(),
+                    "translation": params['translation'].detach() * scale_factor
+                }
+
+            with torch.no_grad():
+                loss = _compute_loss(sdf_grids, sampled_points, transformations, trial_params, relations_map, support_sets, device)
+
+            print(f"  Restart {restart+1}/{num_restarts}: loss = {loss.item():.6f}")
+
+            if loss.item() < best_loss:
+                best_loss = loss.item()
+                best_translations = {name: trial_params[name]['translation'].clone() for name in trial_params}
+
+        print(f"  Best initial loss: {best_loss:.6f}")
+        for name in optim_params:
+            optim_params[name]['translation'] = best_translations[name].requires_grad_(True)
+
+    # Build optimizers
+    optimizers = {}
+    schedulers = {}
+    for name, params in optim_params.items():
+        opt = optim.SGD([params['rotation_6d'], params['translation']],
+                        lr=learning_rate, momentum=0.9)
+        optimizers[name] = opt
+        schedulers[name] = optim.lr_scheduler.CosineAnnealingLR(opt, T_max=num_iterations, eta_min=0.1 * learning_rate)
+
     # Optimization loop
     for iteration in range(num_iterations):
 
-        total_loss = torch.tensor(0.0, device=device)
+            total_loss = torch.tensor(0.0, device=device)
 
-        # Zero gradients
-        for optimizer in optimizers.values():
-            optimizer.zero_grad()
+            # Zero gradients
+            for optimizer in optimizers.values():
+                optimizer.zero_grad()
 
-        # Loop through all object pairs
-        for name_target in sdf_grids.keys():
-            for name in sampled_points.keys():
+            # Loop through all object pairs
+            for name_target in sdf_grids.keys():
+                for name in sampled_points.keys():
 
-                if name == name_target:
-                    continue  # Skip self
+                    if name == name_target:
+                        continue  # Skip self
 
-                contact_info = relations_map.get(name_target, {}).get(name, None)
+                    contact_info = relations_map.get(name_target, {}).get(name, None)
 
-                # 1. Transform points from object's local space to world space
-                points_world = local_to_world_6d(
-                    sampled_points[name],
-                    optim_params[name]['rotation_6d'],
-                    optim_params[name]['translation'],
-                    transformations[name]['scale']
-                )
+                    # 1. Transform points from object's local space to world space
+                    points_world = local_to_world_6d(
+                        sampled_points[name],
+                        optim_params[name]['rotation_6d'],
+                        optim_params[name]['translation'],
+                        transformations[name]['scale']
+                    )
 
-                # 2. Transform from world to target's local normalized space
-                local_points = world_to_local_6d(
-                    points_world,
-                    optim_params[name_target]['rotation_6d'],
-                    optim_params[name_target]['translation'],
-                    transformations[name_target]['scale'],
-                    sdf_grids[name_target]['scale']
-                )
+                    # Check if target transitively supports source — if so, detach target params
+                    # so the supporter doesn't get pushed by this pair's gradients
+                    target_supports_source = name in support_sets.get(name_target, set())
 
-                # Query SDF values
-                sdf_values = query_sdf_trilinear(
-                    sdf_grids[name_target]['grid'],
-                    local_points
-                )
+                    # 2. Transform from world to target's local normalized space
+                    if target_supports_source:
+                        local_points = world_to_local_6d(
+                            points_world,
+                            optim_params[name_target]['rotation_6d'].detach(),
+                            optim_params[name_target]['translation'].detach(),
+                            transformations[name_target]['scale'],
+                            sdf_grids[name_target]['scale']
+                        )
+                    else:
+                        local_points = world_to_local_6d(
+                            points_world,
+                            optim_params[name_target]['rotation_6d'],
+                            optim_params[name_target]['translation'],
+                            transformations[name_target]['scale'],
+                            sdf_grids[name_target]['scale']
+                        )
 
-                # Check if name supports name_target (if so, skip penetration loss)
-                name_supports_target = (name_target in relations_map.get(name, {}) and
-                                       relations_map[name][name_target].get("type") == "support")
+                    # Query SDF values
+                    sdf_values = query_sdf_trilinear(
+                        sdf_grids[name_target]['grid'],
+                        local_points
+                    )
 
-                if not name_supports_target:
-                    # Compute loss: penalize negative SDF values (penetration)
-                    penetration_loss = F.relu(-sdf_values).mean()
-                    total_loss += penetration_loss
+                    # Check if source transitively supports target (if so, skip penetration loss)
+                    name_supports_target = name_target in support_sets.get(name, set())
 
-                if (contact_info is not None):
+                    if not name_supports_target:
+                        # Compute loss: penalize negative SDF values (penetration)
+                        penetration_loss = F.relu(-sdf_values).mean()
+                        total_loss += penetration_loss
 
-                    # Penalize minimum distance to prevent objects from drifting apart
-                    min_distance = sdf_values.min()
-                    contact_loss = torch.max(torch.tensor(0.0, device=device), min_distance) * 0.01
-                    total_loss += contact_loss
+                    if (contact_info is not None):
 
-                    if (contact_info.get("contact", "") == "flat"):
+                        # Penalize minimum distance to prevent objects from drifting apart
+                        min_distance = sdf_values.min()
+                        contact_loss = torch.max(torch.tensor(0.0, device=device), min_distance) * 0.01
+                        total_loss += contact_loss
 
-                        # Regularize near-contact region to encourage objects to sit on surfaces
-                        contact_region = (sdf_values > 0) & (sdf_values < 0.1)
-                        if contact_region.any():
-                            regularization_loss = sdf_values[contact_region].mean() * 0.1
-                        else:
-                            regularization_loss = 0.0
+                        if (contact_info.get("contact", "") == "flat"):
 
-                        total_loss += regularization_loss
+                            # Regularize near-contact region to encourage objects to sit on surfaces
+                            contact_region = (sdf_values > 0) & (sdf_values < 0.1)
+                            if contact_region.any():
+                                regularization_loss = sdf_values[contact_region].mean() * 0.1
+                            else:
+                                regularization_loss = 0.0
 
-        # Gradient Descent + Backpropagation
-        total_loss.backward()
+                            total_loss += regularization_loss
 
-        for optimizer in optimizers.values():
-            optimizer.step()
-        for scheduler in schedulers.values():
-            scheduler.step()
+            # Gradient Descent + Backpropagation
+            total_loss.backward()
 
-        print(f"Iteration {iteration+1}/{num_iterations}, Loss: {total_loss.item():.6f}")
+            for optimizer in optimizers.values():
+                optimizer.step()
+            for scheduler in schedulers.values():
+                scheduler.step()
+
+            print(f"  Iteration {iteration+1}/{num_iterations}, Loss: {total_loss.item():.6f}")
 
     # Convert optimized 6D rotations back to quaternions
     optimized_transforms = {}
