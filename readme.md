@@ -1,8 +1,26 @@
-## CAST Using SAM3D + Graph-based SDF Physics Correction
+# Monocular Image-to-3D With Physics Correction
 
-## Examples
+This repo is a pipeline for converting single images into fully reconstructed 3D scenes with seperate mesh objects, combining methods from [this paper](https://arxiv.org/abs/2502.12894) with ICP-based point cloud alignment. 
 
-### Lamp Scene
+## Segmentation
+
+First, the image is segmented. The image is passed into a multi-modal LLM (such as Qwen2.5VL or GPT5.2) to extract object tags. These object tags are then passed alongside the iamge into SAM3 to produce segmentation masks for each image. We then apply a containment filter, removing all masks contained entirely within others to remove duplicates.
+
+## SAM3D Generation
+
+THe masks are then passed into SAM3D alongside the original image, producing roughly posed mesh objects for each mask. These objects are very crudely positioned and oriented, so additional correction is necessary.
+
+## Point Cloud Alignment
+
+The image is passed into MoGE to generate a point cloud for the scene. The masks are then applied to the point cloud, projecting out as frustrums to isolate the points for each object (since each object is associated with an image mask). After a rough scale alignment between SAM3D's coordinate space and MoGE's, Iterative Closest Point is then applied to each SAM3D object, aligning with their MoGE counterparts. This serves as rough correction.
+
+## SDF-Based Correction
+
+Each SAM3D mesh is converted into an SDF grid, where each grid point is the signed distance to the nearest surface of the object. We run a correction loop for 500 iterations, and at each iteration, an SDF-based loss is computed. For each target object, we project every other object into its local coordinate space, and sample that target object's SDF grid using trilinear interpolation to calculate penetration depth for each contacting object. There are additional components to the loss which are better explained by reading the code at src/cast/correction/sdf.py. We then utilize backpropagation to minize this loss, resulting in a scene with minimal object inter-penetration. TLDR: At each iteration we compute a loss which is more or less a function of how much each object penetrates every other object within the scene. By minimizing this loss using gradient descent, we arrive at a physically plausible scene with little penetration.
+
+# Examples
+
+## Lamp Scene
 
 Original Image:
 ![Lamp Input](lamp.jpg)
@@ -10,7 +28,7 @@ Original Image:
 3D Scene:
 ![Lamp Output](lamp.png)
 
-### Food Scene
+## Food Scene
 
 Original Image:
 ![Lamp Input](burger.jpg)
