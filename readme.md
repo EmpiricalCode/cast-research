@@ -129,8 +129,8 @@ huggingface-cli download bartowski/Qwen_Qwen2.5-VL-7B-Instruct-GGUF mmproj-Qwen_
 Create sam3d-objects environment
 
 ```
-mamba env create -f environments/default.yml
-mamba activate sam3d-objects
+conda create --name sam3d-objects python=3.11
+conda activate sam3d-objects
 ```
 
 For pytorch/cuda dependencies
@@ -143,9 +143,20 @@ Install sam3d-objects and core dependencies
 
 ```
 git clone https://github.com/EmpiricalCode/sam-3d-objects-gsplat
+mv sam-3d-objects-gsplat sam-3d-objects
 cd sam-3d-objects
-pip install -e '.[dev]'
-pip install -e '.[p3d]' # pytorch3d dependency on pytorch is broken, this 2-step approach solves it
+pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl cu121
+pip install numpy psutil
+pip install flash-attn==2.8.3 --no-build-isolation
+pip install hatchling
+pip install -e '.[dev]' --no-build-isolation                                                                                                                                                  
+pip install -e '.[p3d]' --no-build-isolation
+
+pip install torch==2.5.1+cu121 --index-url https://download.pytorch.org/whl/cu121 
+pip install numpy psutil
+pip install flash-attn==2.8.3 --no-build-isolation 
+pip install pytorch3d@git+https://github.com/facebookresearch/pytorch3d.git@75ebeeaea0908c5527e7b1e305fbc7681382db47 --no-build-isolation 
+pip install -e '.[dev]' 
 ```
 
 For inference
@@ -183,10 +194,28 @@ pip install setuptools wheel ninja
 pip install git+https://github.com/NVlabs/nvdiffrast.git --no-build-isolation
 ```
 
+# MoGE Setup
+
+Create env
+
+```
+conda create --name moge python=3.10
+conda activate moge
+
+```
+
+```
+git clone https://github.com/microsoft/MoGe.git
+cd MoGe
+pip install -r requirements.txt   # install the requirements
+pip install torch==2.5.1+cu121 torchvision==0.20.1+cu121 --index-url https://download.pytorch.org/whl/cu121  
+pip install pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu121_pyt251/download.html 
+```
+
 # SDF Setup
 
 ```
-conda create -n sdf
+conda create --name sdf python=3.10
 conda activate sdf
 ```
 
@@ -204,6 +233,9 @@ pip install python-dotenv
 
 pip install fvcore iopath
 pip install --no-index --no-cache-dir pytorch3d -f https://dl.fbaipublicfiles.com/pytorch3d/packaging/wheels/py310_cu118_pyt200/download.html
+
+pip install torch
+pip install torchvision
 ```
 
 Inference
