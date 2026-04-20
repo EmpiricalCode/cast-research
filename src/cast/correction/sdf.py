@@ -269,7 +269,7 @@ def optimize_sdf(sdf_grids, transformations, sampled_points, support_relations, 
         for restart in range(num_restarts):
             trial_params = {}
             for name, params in optim_params.items():
-                scale_factor = 0.9 + 0.2 * torch.rand(3, device=device)  # uniform [0.9, 1.1]
+                scale_factor = 0.95 + 0.1 * torch.rand(3, device=device)  # uniform [0.95, 1.05]
                 trial_params[name] = {
                     "rotation_6d": params['rotation_6d'].detach(),
                     "translation": params['translation'].detach() * scale_factor
