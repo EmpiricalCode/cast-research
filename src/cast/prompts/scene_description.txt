@@ -1,0 +1,16 @@
+You are analyzing a scene image. For every object, describe what it is, what it supports, and what supports it. Then, for every pair of objects in contact, describe their spatial and contact relationship.
+
+INSTRUCTIONS:
+- Look at the image carefully.
+- First, for EACH labeled object, write a short plain-language description under its heading. Describe: (1) what the object is, (2) what other objects it supports (if any), and (3) what supports it (if any).
+- Then, fill in the JSON structure for pairwise relationships. For each ordered pair (A, B), describe their spatial relationship and any contact.
+- Do NOT just say relative directions like "below and to the right" -- describe what the objects are and how they physically relate (e.g. "Object A is a mug sitting on the countertop. Object B is a plate also on the countertop to the left of the mug. No contact between them.").
+- Include whether they are touching, what surfaces face each other, and any support relationships you observe.
+- If two objects are NOT in contact, OMIT that entry entirely from the JSON output. Only include pairs where objects are physically touching or in contact.
+- CONSISTENCY: Your descriptions MUST be consistent across pairs. If A's entry for B says they are in contact, then B's entry for A MUST also describe contact. If A touches B, then B touches A -- no exceptions.
+
+Use the following format exactly:
+
+{scaffolding}
+
+YOUR ONLY OUTPUT SHOULD MATCH THE FORMAT ABOVE - NO OTHER TEXT!
